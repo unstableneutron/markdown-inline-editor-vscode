@@ -229,3 +229,59 @@ describe('filterDecorationsForEditor — basic cases', () => {
     expect(result.has('hide')).toBe(true);
   });
 });
+
+describe('filterDecorationsForEditor — view-only mode', () => {
+  it('keeps inline code rendered when cursor is inside the scope', () => {
+    const text = '`Inline code`';
+    const decs: DecorationRange[] = [
+      { startPos: 0, endPos: 13, type: 'code' } as any,
+      { startPos: 0, endPos: 1, type: 'transparent' } as any,
+      { startPos: 12, endPos: 13, type: 'transparent' } as any,
+    ];
+    const editor = makeEditor(text, 0, 5);
+    const scope: ScopeEntry = {
+      startPos: 0,
+      endPos: 13,
+      range: new Range(editor.document.positionAt(0), editor.document.positionAt(13)) as any,
+    };
+
+    const result = filterDecorationsForEditor(
+      editor as any,
+      decs,
+      [scope],
+      text,
+      (s, e, t) => simpleRangeFactory(s, e, t),
+      'viewOnly',
+    );
+
+    expect(result.get('transparent')?.length).toBe(2);
+    expect(result.get('code')?.length).toBe(1);
+  });
+
+  it('keeps heading styling on the active line', () => {
+    const text = '# Heading';
+    const decs: DecorationRange[] = [
+      { startPos: 0, endPos: 2, type: 'hide' } as any,
+      { startPos: 2, endPos: 9, type: 'heading1' } as any,
+      { startPos: 2, endPos: 9, type: 'heading' } as any,
+    ];
+    const editor = makeEditor(text, 0, 3);
+    const scope: ScopeEntry = {
+      startPos: 0,
+      endPos: 9,
+      range: new Range(editor.document.positionAt(0), editor.document.positionAt(9)) as any,
+    };
+
+    const result = filterDecorationsForEditor(
+      editor as any,
+      decs,
+      [scope],
+      text,
+      (s, e, t) => simpleRangeFactory(s, e, t),
+      'viewOnly',
+    );
+
+    expect(result.get('heading1')?.length).toBe(1);
+    expect(result.get('heading')?.length).toBe(1);
+  });
+});

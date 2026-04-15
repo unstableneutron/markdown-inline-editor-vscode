@@ -1,5 +1,6 @@
 import { Range, type DecorationOptions, type Position, type TextEditor } from 'vscode';
 import type { DecorationRange, DecorationType } from '../parser';
+import type { EditorInteractionMode } from '../vim-mode';
 import { isMarkerDecorationType } from './decoration-categories';
 
 export type ScopeEntry = {
@@ -17,11 +18,14 @@ export function filterDecorationsForEditor(
   decorations: DecorationRange[],
   scopes: ScopeEntry[],
   originalText: string,
-  rangeFactory: RangeFactory
+  rangeFactory: RangeFactory,
+  interactionMode: EditorInteractionMode = 'interactiveEdit'
 ): Map<DecorationType, FilteredDecoration[]> {
   const selectedRanges: Range[] = [];
   const cursorPositions: Position[] = [];
   const activeLines = new Set<number>(); // Lines with selections or cursors
+  const selectionLines = new Set<number>();
+  const isViewOnlyMode = interactionMode === 'viewOnly';
 
   for (const selection of editor.selections) {
     if (!selection.isEmpty) {
@@ -29,6 +33,7 @@ export function filterDecorationsForEditor(
       // Add all lines in the selection to activeLines
       for (let line = selection.start.line; line <= selection.end.line; line++) {
         activeLines.add(line);
+        selectionLines.add(line);
       }
     } else {
       cursorPositions.push(selection.start);
@@ -38,7 +43,7 @@ export function filterDecorationsForEditor(
 
   const rawRanges = mergeRanges([
     ...collectRawRanges(selectedRanges, scopes),
-    ...collectCursorScopeRanges(cursorPositions, scopes),
+    ...(interactionMode === 'interactiveEdit' ? collectCursorScopeRanges(cursorPositions, scopes) : []),
   ]);
 
   const selectionOnlyMarkerTypes = new Set<DecorationType>([
@@ -71,11 +76,12 @@ export function filterDecorationsForEditor(
   // For table blocks, if cursor/selection is on ANY line in the table,
   // reveal the entire table (show raw markdown, not decorations).
   const tableScopes = scopes.filter(s => s.kind === 'table');
+  const tableActiveLines = isViewOnlyMode ? selectionLines : activeLines;
   const rawTableRanges: Range[] = [];
   for (const tableScope of tableScopes) {
     let tableIsActive = false;
     for (let line = tableScope.range.start.line; line <= tableScope.range.end.line; line++) {
-      if (activeLines.has(line)) {
+      if (tableActiveLines.has(line)) {
         tableIsActive = true;
         break;
       }
@@ -97,7 +103,10 @@ export function filterDecorationsForEditor(
     if (selectionOverlaps) {
       return true;
     }
-    return cursorPositions.some((position) => range.contains(position));
+    if (interactionMode === 'interactiveEdit') {
+      return cursorPositions.some((position) => range.contains(position));
+    }
+    return false;
   };
 
   for (const decoration of decorations) {
@@ -130,7 +139,7 @@ export function filterDecorationsForEditor(
       continue;
     }
 
-    if (headingTypes.has(decoration.type) && isActiveLine) {
+    if (headingTypes.has(decoration.type) && isActiveLine && interactionMode === 'interactiveEdit') {
       // Show raw heading text (no heading styling) on active lines
       continue;
     }
@@ -144,11 +153,11 @@ export function filterDecorationsForEditor(
         // Raw state: skip (show actual syntax)
         continue;
       }
-      if (isHeadingMarkerHide && isActiveLine) {
+      if (isHeadingMarkerHide && isActiveLine && interactionMode === 'interactiveEdit') {
         // Show heading markers on active lines
         continue;
       }
-      if (isActiveLine) {
+      if (isActiveLine && interactionMode === 'interactiveEdit') {
         // Ghost state: show faint markers on active lines
         ghostFaintRanges.push(range);
         continue;
@@ -216,7 +225,7 @@ export function filterDecorationsForEditor(
         // Raw state: skip marker decorations (show actual syntax)
         continue;
       }
-      if (isActiveLine) {
+      if (isActiveLine && interactionMode === 'interactiveEdit') {
         // Ghost state: show faint markers on active lines
         ghostFaintRanges.push(range);
         continue;

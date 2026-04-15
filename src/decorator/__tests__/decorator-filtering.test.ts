@@ -8,6 +8,7 @@ jest.mock('../../parser', () => ({
 
 import { Decorator } from '../../decorator';
 import type { DecorationRange, DecorationType } from '../../parser';
+import type { EditorInteractionMode } from '../../vim-mode';
 import { isMarkerDecorationType } from '../decoration-categories';
 import { TextDocument, TextEditor, Selection, Position, Uri, Range } from '../../test/__mocks__/vscode';
 
@@ -21,7 +22,8 @@ function filterDecorationsForSelection(
   text: string,
   decorations: DecorationRange[],
   scopeRanges: Array<[number, number]>,
-  selection: ReturnType<typeof Selection>
+  selection: ReturnType<typeof Selection>,
+  interactionMode: EditorInteractionMode = 'interactiveEdit'
 ): Map<DecorationType, unknown[]> {
   const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, text);
   const editor = new TextEditor(document, [selection]);
@@ -40,12 +42,13 @@ function filterDecorationsForSelection(
     filterDecorations: (
       ranges: DecorationRange[],
       scopes: ScopeEntry[],
-      originalText: string
+      originalText: string,
+      mode?: EditorInteractionMode
     ) => Map<DecorationType, unknown[]>;
   };
 
   decorator.activeEditor = editor;
-  return decorator.filterDecorations(decorations, scopes, text);
+  return decorator.filterDecorations(decorations, scopes, text, interactionMode);
 }
 
 describe('Decorator filtering behavior', () => {
@@ -166,6 +169,18 @@ describe('Decorator filtering behavior', () => {
     const filtered = filterDecorationsForSelection(text, decorations, [], selection);
 
     expect(filtered.has('listItem')).toBe(false);
+  });
+
+  it('keeps list item decoration on cursor-only overlap in viewOnly mode', () => {
+    const text = '- item';
+    const decorations: DecorationRange[] = [
+      { startPos: 0, endPos: 2, type: 'listItem' },
+    ];
+
+    const selection = new Selection(new Position(0, 0), new Position(0, 0));
+    const filtered = filterDecorationsForSelection(text, decorations, [], selection, 'viewOnly');
+
+    expect(filtered.get('listItem')?.length).toBe(1);
   });
 
   it('reveals horizontal rule in raw state when cursor/selection intersects', () => {

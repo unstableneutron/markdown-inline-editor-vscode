@@ -12,6 +12,7 @@ import { MermaidDiagramDecorations } from './decorator/mermaid-diagram-decoratio
 import { MathDecorations } from './math/math-decorations';
 import { renderMermaidSvg, svgToDataUri, createErrorSvg } from './mermaid/mermaid-renderer';
 import { MermaidHoverIndicatorDecorationType } from './decorations';
+import type { EditorInteractionMode } from './vim-mode';
 
 /** Workspace state key prefix for per-file decoration toggle persistence. */
 const DECORATION_STATE_KEY_PREFIX = 'mdInline.decorationsEnabled';
@@ -720,7 +721,8 @@ export class Decorator {
   private filterDecorations(
     decorations: DecorationRange[],
     scopes: ScopeEntry[],
-    originalText: string
+    originalText: string,
+    interactionMode: EditorInteractionMode = 'interactiveEdit'
   ): Map<DecorationType, Array<Range | DecorationOptions>> {
     if (!this.activeEditor) {
       return new Map();
@@ -731,7 +733,8 @@ export class Decorator {
       decorations,
       scopes,
       originalText,
-      (startPos, endPos, text) => this.createRange(startPos, endPos, text)
+      (startPos, endPos, text) => this.createRange(startPos, endPos, text),
+      interactionMode,
     );
   }
 
