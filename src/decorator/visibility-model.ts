@@ -139,7 +139,11 @@ export function filterDecorationsForEditor(
       continue;
     }
 
-    if (headingTypes.has(decoration.type) && isActiveLine && interactionMode === 'interactiveEdit') {
+    if (
+      headingTypes.has(decoration.type) &&
+      isActiveLine &&
+      (interactionMode === 'interactiveEdit' || selectedRanges.length > 0)
+    ) {
       // Show raw heading text (no heading styling) on active lines
       continue;
     }

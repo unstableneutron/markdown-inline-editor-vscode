@@ -284,4 +284,51 @@ describe('filterDecorationsForEditor — view-only mode', () => {
     expect(result.get('heading1')?.length).toBe(1);
     expect(result.get('heading')?.length).toBe(1);
   });
+
+  it('reveals heading raw state when selection covers heading', () => {
+    const text = '# Heading';
+    const decs: DecorationRange[] = [
+      { startPos: 0, endPos: 2, type: 'hide' } as any,
+      { startPos: 2, endPos: 9, type: 'heading1' } as any,
+      { startPos: 2, endPos: 9, type: 'heading' } as any,
+    ];
+    const editor = makeEditorWithSelection(text, 0, 0, 0, 9);
+
+    const result = filterDecorationsForEditor(
+      editor as any,
+      decs,
+      [],
+      text,
+      (s, e, t) => simpleRangeFactory(s, e, t),
+      'viewOnly',
+    );
+
+    expect(result.has('heading1')).toBe(false);
+    expect(result.has('heading')).toBe(false);
+  });
+
+  it('reveals tables in raw state when selection covers them', () => {
+    const text = '| Header |\n| ------ |';
+    const decs: DecorationRange[] = [
+      { startPos: 0, endPos: 1, type: 'tablePipe', replacement: '│' } as any,
+    ];
+    const editor = makeEditorWithSelection(text, 0, 0, 1, 0);
+    const tableScope: ScopeEntry = {
+      startPos: 0,
+      endPos: text.length,
+      range: new Range(editor.document.positionAt(0), editor.document.positionAt(text.length)) as any,
+      kind: 'table',
+    };
+
+    const result = filterDecorationsForEditor(
+      editor as any,
+      decs,
+      [tableScope],
+      text,
+      (s, e, t) => simpleRangeFactory(s, e, t),
+      'viewOnly',
+    );
+
+    expect(result.has('tablePipe')).toBe(false);
+  });
 });

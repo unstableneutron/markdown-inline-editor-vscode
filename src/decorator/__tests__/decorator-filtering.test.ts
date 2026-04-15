@@ -84,6 +84,21 @@ describe('Decorator filtering behavior', () => {
     expect(filtered.has('ghostFaint')).toBe(false);
   });
 
+  it('reveals heading raw state for viewOnly selections', () => {
+    const text = '# Heading';
+    const decorations: DecorationRange[] = [
+      { startPos: 0, endPos: 2, type: 'hide' },
+      { startPos: 2, endPos: 9, type: 'heading1' },
+      { startPos: 2, endPos: 9, type: 'heading' },
+    ];
+
+    const selection = new Selection(new Position(0, 0), new Position(0, 9));
+    const filtered = filterDecorationsForSelection(text, decorations, [[0, 9]], selection, 'viewOnly');
+
+    expect(filtered.has('heading1')).toBe(false);
+    expect(filtered.has('heading')).toBe(false);
+  });
+
   it('does not suppress marker decorations on non-active lines', () => {
     const text = '- item\nnext';
     const decorations: DecorationRange[] = [
