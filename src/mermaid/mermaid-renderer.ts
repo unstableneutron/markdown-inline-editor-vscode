@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import { LRUCache } from '../utils/lru-cache';
+import { config } from '../config';
 import { MermaidWebviewManager } from './webview-manager';
 import { processSvg } from './svg-processor';
 import { createErrorSvg, extractErrorMessage } from './error-handler';
 import { MERMAID_CONSTANTS } from './constants';
 import type { MermaidRenderOptions } from './types';
+import { isMmdrAvailable, renderMmdrSvg } from './mmdr-renderer';
 
 // Singleton webview manager instance
 let webviewManager: MermaidWebviewManager | undefined;
@@ -15,6 +17,53 @@ const decorationCache = new LRUCache<string, Promise<string>>(MERMAID_CONSTANTS.
 
 // Log "waiting for webview" at most once per session to avoid spam when webview is never created
 let hasLoggedWaitingForWebview = false;
+let hasWarnedAboutMissingMmdr = false;
+let isMmdrUnavailable = false;
+
+export function getMermaidRendererFingerprint(): string {
+  const renderer = config.mermaid.renderer();
+  if (renderer !== 'mermaid-rs-renderer') {
+    return renderer;
+  }
+
+  return [
+    renderer,
+    config.mermaid.mmdr.command(),
+    config.mermaid.mmdr.preferredAspectRatio() ?? '',
+    config.mermaid.mmdr.nodeSpacing() ?? '',
+    config.mermaid.mmdr.rankSpacing() ?? '',
+    config.mermaid.mmdr.fastText(),
+  ].join('\n');
+}
+
+export function clearMermaidRenderCaches(): void {
+  decorationCache.clear();
+  hasWarnedAboutMissingMmdr = false;
+  isMmdrUnavailable = false;
+}
+
+export async function preflightMmdrAvailability(): Promise<boolean> {
+  if (config.mermaid.renderer() !== 'mermaid-rs-renderer') {
+    isMmdrUnavailable = false;
+    return true;
+  }
+
+  if (isMmdrUnavailable) {
+    return false;
+  }
+
+  const isAvailable = await isMmdrAvailable(config.mermaid.mmdr.command());
+  isMmdrUnavailable = !isAvailable;
+
+  if (!isAvailable && !hasWarnedAboutMissingMmdr) {
+    hasWarnedAboutMissingMmdr = true;
+    void vscode.window.showWarningMessage(
+      'Mermaid renderer "mermaid-rs-renderer" could not find the mmdr executable. Falling back to official Mermaid JS.'
+    );
+  }
+
+  return isAvailable;
+}
 
 async function waitForWebviewOnceLogged(manager: MermaidWebviewManager): Promise<void> {
   if (!hasLoggedWaitingForWebview) {
@@ -22,6 +71,67 @@ async function waitForWebviewOnceLogged(manager: MermaidWebviewManager): Promise
     console.warn('Mermaid: waiting for webview');
   }
   await manager.waitForWebview();
+}
+
+async function requestOfficialSvg(
+  source: string,
+  darkMode: boolean,
+  fontFamily: string | undefined,
+  timeoutMs: number,
+  cancellationToken?: vscode.CancellationToken,
+): Promise<string> {
+  if (!webviewManager) {
+    throw new Error('Mermaid renderer not initialized. Call initMermaidRenderer first.');
+  }
+
+  await waitForWebviewOnceLogged(webviewManager);
+
+  return webviewManager.requestSvg(
+    { source, darkMode, fontFamily },
+    timeoutMs,
+    cancellationToken,
+  );
+}
+
+async function requestSelectedSvg(
+  source: string,
+  options: { theme: 'default' | 'dark'; fontFamily?: string },
+  timeoutMs: number,
+  cancellationToken?: vscode.CancellationToken,
+): Promise<string> {
+  const darkMode = options.theme === 'dark';
+  if (config.mermaid.renderer() !== 'mermaid-rs-renderer' || isMmdrUnavailable) {
+    return requestOfficialSvg(source, darkMode, options.fontFamily, timeoutMs, cancellationToken);
+  }
+
+  const abortController = new AbortController();
+  const cancellationDisposable = cancellationToken?.onCancellationRequested(() => {
+    abortController.abort();
+  });
+
+  try {
+    return await renderMmdrSvg(source, {
+      command: config.mermaid.mmdr.command(),
+      preferredAspectRatio: config.mermaid.mmdr.preferredAspectRatio(),
+      nodeSpacing: config.mermaid.mmdr.nodeSpacing(),
+      rankSpacing: config.mermaid.mmdr.rankSpacing(),
+      fastText: config.mermaid.mmdr.fastText(),
+      timeoutMs,
+      signal: abortController.signal,
+    });
+  } catch (error) {
+    if (cancellationToken?.isCancellationRequested) {
+      throw new vscode.CancellationError();
+    }
+
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      isMmdrUnavailable = true;
+    }
+    console.warn('Mermaid mmdr render failed, falling back to official renderer:', error);
+    return requestOfficialSvg(source, darkMode, options.fontFamily, timeoutMs, cancellationToken);
+  } finally {
+    cancellationDisposable?.dispose();
+  }
 }
 
 /**
@@ -49,14 +159,6 @@ export async function renderMermaidSvgNatural(
   options: { theme: 'default' | 'dark'; fontFamily?: string },
   cancellationToken?: vscode.CancellationToken
 ): Promise<string> {
-  if (!webviewManager) {
-    throw new Error('Mermaid renderer not initialized. Call initMermaidRenderer first.');
-  }
-
-  await waitForWebviewOnceLogged(webviewManager);
-
-  const darkMode = options.theme === 'dark';
-  
   // Check cancellation before starting expensive operation
   if (cancellationToken?.isCancellationRequested) {
     throw new vscode.CancellationError();
@@ -65,13 +167,9 @@ export async function renderMermaidSvgNatural(
   // Use shorter timeout for hover requests (5 seconds) to match VS Code's hover timeout
   // Regular requests use the default 30-second timeout
   const timeoutMs = cancellationToken ? MERMAID_CONSTANTS.HOVER_REQUEST_TIMEOUT_MS : MERMAID_CONSTANTS.REQUEST_TIMEOUT_MS;
-  
+
   // Request SVG without processing (get natural dimensions)
-  const svgString = await webviewManager.requestSvg(
-    { source, darkMode, fontFamily: options.fontFamily },
-    timeoutMs,
-    cancellationToken
-  );
+  const svgString = await requestSelectedSvg(source, options, timeoutMs, cancellationToken);
   
   // Check cancellation again after await (in case it was cancelled during the request)
   if (cancellationToken?.isCancellationRequested) {
@@ -91,7 +189,7 @@ function memoizeMermaidDecoration(
   func: (source: string, darkMode: boolean, height: number, fontFamily?: string, maxWidth?: number) => Promise<string>
 ): (source: string, darkMode: boolean, height: number, fontFamily?: string, maxWidth?: number) => Promise<string> {
   return (source: string, darkMode: boolean, height: number, fontFamily?: string, maxWidth?: number): Promise<string> => {
-    const key = `${source}|${darkMode}|${height}|${fontFamily ?? ''}|${maxWidth ?? ''}`;
+    const key = `${source}|${darkMode}|${height}|${fontFamily ?? ''}|${maxWidth ?? ''}|${getMermaidRendererFingerprint()}`;
     const cached = decorationCache.get(key);
     if (cached) {
       return cached;
@@ -114,15 +212,10 @@ const getMermaidDecoration = memoizeMermaidDecoration(async (
   fontFamily?: string,
   maxWidth?: number
 ): Promise<string> => {
-  if (!webviewManager) {
-    throw new Error('Mermaid renderer not initialized. Call initMermaidRenderer first.');
-  }
-
-  await waitForWebviewOnceLogged(webviewManager);
-
-  const svgString = await webviewManager.requestSvg(
-    { source, darkMode, fontFamily },
-    MERMAID_CONSTANTS.REQUEST_TIMEOUT_MS
+  const svgString = await requestSelectedSvg(
+    source,
+    { theme: darkMode ? 'dark' : 'default', fontFamily },
+    MERMAID_CONSTANTS.REQUEST_TIMEOUT_MS,
   );
   
   // Check if this is an error SVG (contains "Mermaid Rendering Error")
@@ -151,12 +244,6 @@ export async function renderMermaidSvg(
   source: string,
   options: MermaidRenderOptions & { numLines?: number }
 ): Promise<string> {
-  if (!webviewManager) {
-    throw new Error('Mermaid renderer not initialized. Call initMermaidRenderer first.');
-  }
-
-  await waitForWebviewOnceLogged(webviewManager);
-
   const darkMode = options.theme === 'dark';
   // Calculate height based on line count (like Markless: (numLines + 2) * lineHeight)
   // Default to 200px if numLines not provided
@@ -200,7 +287,6 @@ export function disposeMermaidRenderer(): void {
     webviewManager.dispose();
     webviewManager = undefined;
   }
-  
-  // Clear decoration cache
-  decorationCache.clear();
+
+  clearMermaidRenderCaches();
 }

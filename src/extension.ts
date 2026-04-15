@@ -9,7 +9,7 @@ import { normalizeAnchorText } from './position-mapping';
 import { config } from './config';
 import { MarkdownParser } from './parser';
 import { MarkdownParseCache } from './markdown-parse-cache';
-import { initMermaidRenderer, disposeMermaidRenderer } from './mermaid/mermaid-renderer';
+import { clearMermaidRenderCaches, disposeMermaidRenderer, initMermaidRenderer, preflightMmdrAvailability } from './mermaid/mermaid-renderer';
 import { processSvg } from './mermaid/svg-processor';
 
 /**
@@ -108,6 +108,7 @@ export type ExtensionApi = {
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Initialize mermaid renderer with extension context
   initMermaidRenderer(context);
+  void preflightMmdrAvailability();
 
   const parser = new MarkdownParser();
   const parseCache = new MarkdownParseCache(parser);
@@ -247,6 +248,12 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
 
     if (event.affectsConfiguration('markdownInlineEditor.colors')) {
       decorator.recreateColorDependentTypes();
+    }
+
+    if (event.affectsConfiguration('markdownInlineEditor.mermaid')) {
+      clearMermaidRenderCaches();
+      void preflightMmdrAvailability();
+      decorator.updateDecorationsForSelection();
     }
 
     if (event.affectsConfiguration('editor.fontSize') || event.affectsConfiguration('editor.lineHeight')) {

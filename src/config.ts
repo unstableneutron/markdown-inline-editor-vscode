@@ -65,6 +65,40 @@ export const config = {
         .get<boolean>('math.enabled', true);
     },
   },
+  mermaid: {
+    renderer(): 'official-mermaid-js' | 'mermaid-rs-renderer' {
+      return vscode.workspace
+        .getConfiguration(SECTION)
+        .get<'official-mermaid-js' | 'mermaid-rs-renderer'>('mermaid.renderer', 'official-mermaid-js');
+    },
+    mmdr: {
+      command(): string {
+        return vscode.workspace
+          .getConfiguration(SECTION)
+          .get<string>('mermaid.mmdr.command', 'mmdr');
+      },
+      preferredAspectRatio(): string | undefined {
+        return vscode.workspace
+          .getConfiguration(SECTION)
+          .get<string>('mermaid.mmdr.preferredAspectRatio');
+      },
+      nodeSpacing(): number | undefined {
+        return vscode.workspace
+          .getConfiguration(SECTION)
+          .get<number>('mermaid.mmdr.nodeSpacing');
+      },
+      rankSpacing(): number | undefined {
+        return vscode.workspace
+          .getConfiguration(SECTION)
+          .get<number>('mermaid.mmdr.rankSpacing');
+      },
+      fastText(): boolean {
+        return vscode.workspace
+          .getConfiguration(SECTION)
+          .get<boolean>('mermaid.mmdr.fastText', false);
+      },
+    },
+  },
   mentions: {
     /** If set, overrides GitHub context: true = force links on, false = force off. Unset = use git remote auto-detect. */
     linksEnabled(): boolean | undefined {

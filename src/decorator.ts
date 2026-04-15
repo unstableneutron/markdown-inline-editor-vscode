@@ -10,7 +10,7 @@ import { filterDecorationsForEditor, ScopeEntry } from './decorator/visibility-m
 import { handleCheckboxClick } from './decorator/checkbox-toggle';
 import { MermaidDiagramDecorations } from './decorator/mermaid-diagram-decorations';
 import { MathDecorations } from './math/math-decorations';
-import { renderMermaidSvg, svgToDataUri, createErrorSvg } from './mermaid/mermaid-renderer';
+import { createErrorSvg, getMermaidRendererFingerprint, renderMermaidSvg, svgToDataUri } from './mermaid/mermaid-renderer';
 import { MermaidHoverIndicatorDecorationType } from './decorations';
 
 /** Workspace state key prefix for per-file decoration toggle persistence. */
@@ -32,6 +32,7 @@ type MermaidBlockKeyCacheEntry = {
   theme: 'default' | 'dark';
   fontFamily?: string;
   numLines: number;
+  rendererFingerprint: string;
   key: string;
 };
 
@@ -43,19 +44,21 @@ function getMermaidBlockCacheKey(
   theme: 'default' | 'dark',
   fontFamily?: string
 ): string {
+  const rendererFingerprint = getMermaidRendererFingerprint();
   const cached = mermaidBlockKeyCache.get(block);
   if (
     cached &&
     cached.theme === theme &&
     cached.fontFamily === fontFamily &&
-    cached.numLines === block.numLines
+    cached.numLines === block.numLines &&
+    cached.rendererFingerprint === rendererFingerprint
   ) {
     return cached.key;
   }
 
-  const keySource = `${block.source}\n${theme}\n${fontFamily ?? ''}\n${block.numLines}`;
+  const keySource = `${block.source}\n${theme}\n${fontFamily ?? ''}\n${block.numLines}\n${rendererFingerprint}`;
   const key = createHash('sha256').update(keySource).digest('hex');
-  mermaidBlockKeyCache.set(block, { theme, fontFamily, numLines: block.numLines, key });
+  mermaidBlockKeyCache.set(block, { theme, fontFamily, numLines: block.numLines, rendererFingerprint, key });
   return key;
 }
 

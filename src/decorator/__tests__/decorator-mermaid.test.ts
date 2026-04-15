@@ -1,6 +1,7 @@
 jest.mock('../../mermaid/mermaid-renderer', () => ({
   initMermaidRenderer: jest.fn(),
   renderMermaidSvg: jest.fn(),
+  getMermaidRendererFingerprint: jest.fn(() => 'fingerprint-a'),
   svgToDataUri: jest.fn((svg: string) => `data:${svg}`),
   createErrorSvg: jest.fn(() => '<svg></svg>'),
   saveSvgToHtml: jest.fn(),
@@ -9,10 +10,11 @@ jest.mock('../../mermaid/mermaid-renderer', () => ({
 
 import { Decorator } from '../../decorator';
 import { MarkdownParseCache } from '../../markdown-parse-cache';
-import { TextDocument, TextEditor, Selection, Uri } from '../../test/__mocks__/vscode';
-import { renderMermaidSvg } from '../../mermaid/mermaid-renderer';
+import { TextDocument, TextEditor, Selection, Uri, window } from '../../test/__mocks__/vscode';
+import { getMermaidRendererFingerprint, renderMermaidSvg } from '../../mermaid/mermaid-renderer';
 
 const mockRenderMermaidSvg = renderMermaidSvg as jest.MockedFunction<typeof renderMermaidSvg>;
+const mockGetMermaidRendererFingerprint = getMermaidRendererFingerprint as jest.MockedFunction<typeof getMermaidRendererFingerprint>;
 
 describe('Decorator - Mermaid diagrams', () => {
   const blockText = [
@@ -35,6 +37,9 @@ describe('Decorator - Mermaid diagrams', () => {
   beforeEach(() => {
     mockRenderMermaidSvg.mockReset();
     mockRenderMermaidSvg.mockResolvedValue('<svg></svg>');
+    mockGetMermaidRendererFingerprint.mockReset();
+    mockGetMermaidRendererFingerprint.mockReturnValue('fingerprint-a');
+    window.createTextEditorDecorationType.mockClear();
   });
 
   it('renders mermaid diagram when cursor is outside the block', async () => {
@@ -113,5 +118,27 @@ describe('Decorator - Mermaid diagrams', () => {
 
     expect(mockRenderMermaidSvg).toHaveBeenCalledTimes(1);
     expect(applyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('recreates Mermaid decoration entries when the renderer fingerprint changes', async () => {
+    const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, text);
+    const outsideOffset = text.indexOf('After') + 1;
+    const outsidePosition = document.positionAt(outsideOffset);
+    const selection = new Selection(outsidePosition, outsidePosition);
+    const editor = new TextEditor(document, [selection]);
+    const decorator = new Decorator(new MarkdownParseCache({} as any));
+
+    (decorator as any).activeEditor = editor;
+    (decorator as any).isSelectionOrCursorInsideOffsets = jest.fn().mockReturnValue(false);
+
+    await (decorator as any).updateMermaidDiagrams(mermaidBlocks, text, document.version);
+    const callsAfterFirstRender = window.createTextEditorDecorationType.mock.calls.length;
+
+    mockGetMermaidRendererFingerprint.mockReturnValue('fingerprint-b');
+    mockRenderMermaidSvg.mockResolvedValueOnce('<svg data-variant="b"></svg>');
+
+    await (decorator as any).updateMermaidDiagrams(mermaidBlocks, text, document.version);
+
+    expect(window.createTextEditorDecorationType.mock.calls.length).toBe(callsAfterFirstRender + 1);
   });
 });

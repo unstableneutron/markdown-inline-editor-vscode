@@ -129,6 +129,48 @@
           "description": "Render LaTeX math inline ($...$ and $$...$$)",
           "markdownDescription": "Render LaTeX math inline ($...$ and $$...$$). When disabled, math delimiters are shown as plain text."
         },
+        "markdownInlineEditor.mermaid.renderer": {
+          "type": "string",
+          "default": "official-mermaid-js",
+          "enum": [
+            "official-mermaid-js",
+            "mermaid-rs-renderer"
+          ],
+          "enumDescriptions": [
+            "Use the bundled official Mermaid JavaScript renderer in a hidden webview. Best compatibility with Mermaid syntax and output.",
+            "Use the mmdr Rust CLI (mermaid-rs-renderer). Falls back to the official renderer when the CLI is unavailable or fails."
+          ],
+          "description": "Mermaid renderer to use for inline diagram rendering.",
+          "markdownDescription": "Choose the Mermaid renderer for inline diagram rendering. `official-mermaid-js` uses the bundled official Mermaid JavaScript renderer. `mermaid-rs-renderer` uses the `mmdr` Rust CLI and falls back to the official renderer if the CLI is unavailable or fails."
+        },
+        "markdownInlineEditor.mermaid.mmdr.command": {
+          "type": "string",
+          "default": "mmdr",
+          "scope": "machine",
+          "description": "Command used to launch the mmdr Mermaid Rust CLI",
+          "markdownDescription": "Command used to launch the `mmdr` Mermaid Rust CLI when `markdownInlineEditor.mermaid.renderer` is set to `mermaid-rs-renderer`."
+        },
+        "markdownInlineEditor.mermaid.mmdr.preferredAspectRatio": {
+          "type": "string",
+          "description": "Preferred aspect ratio passed to mmdr",
+          "markdownDescription": "Optional preferred aspect ratio passed to `mmdr` using `--preferredAspectRatio` (for example `16:9` or `4:3`)."
+        },
+        "markdownInlineEditor.mermaid.mmdr.nodeSpacing": {
+          "type": "number",
+          "description": "Node spacing passed to mmdr",
+          "markdownDescription": "Optional node spacing passed to `mmdr` using `--nodeSpacing`."
+        },
+        "markdownInlineEditor.mermaid.mmdr.rankSpacing": {
+          "type": "number",
+          "description": "Rank spacing passed to mmdr",
+          "markdownDescription": "Optional rank spacing passed to `mmdr` using `--rankSpacing`."
+        },
+        "markdownInlineEditor.mermaid.mmdr.fastText": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable mmdr fast text metrics",
+          "markdownDescription": "Enable `mmdr --fastText` when using the `mermaid-rs-renderer` backend. This can improve performance at the cost of text-metric precision."
+        },
         "markdownInlineEditor.mentions.enabled": {
           "type": "boolean",
           "default": true,
@@ -280,6 +322,7 @@
     "@eslint/js": "^10.0.1",
     "@tsconfig/node-lts": "^24.0.0",
     "@types/jest": "^30.0.0",
+    "@types/mdast": "^4.0.4",
     "@types/mocha": "^10.0.10",
     "@types/node": "^25.5.2",
     "@types/unist": "^3.0.3",

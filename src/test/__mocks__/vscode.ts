@@ -215,9 +215,12 @@ export const window = {
   activeColorTheme: {
     kind: ColorThemeKind.Dark,
   },
+  showInformationMessage: jest.fn().mockResolvedValue(undefined),
+  showWarningMessage: jest.fn().mockResolvedValue(undefined),
   onDidChangeActiveTextEditor: () => ({ dispose: () => {} }),
   onDidChangeTextEditorSelection: () => ({ dispose: () => {} }),
   onDidChangeActiveColorTheme: () => ({ dispose: () => {} }),
+  registerWebviewViewProvider: jest.fn(() => ({ dispose: () => {} })),
 };
 
 export class WorkspaceEdit {
@@ -233,9 +236,27 @@ export class WorkspaceEdit {
   }
 }
 
+const configurationListeners: Array<(event: { affectsConfiguration: (section: string) => boolean }) => void> = [];
+
+export function fireDidChangeConfiguration(event: { affectsConfiguration: (section: string) => boolean }): void {
+  for (const listener of configurationListeners) {
+    listener(event);
+  }
+}
+
 export const workspace = {
   onDidChangeTextDocument: () => ({ dispose: () => {} }),
-  onDidChangeConfiguration: () => ({ dispose: () => {} }),
+  onDidChangeConfiguration: (listener: (event: { affectsConfiguration: (section: string) => boolean }) => void) => {
+    configurationListeners.push(listener);
+    return {
+      dispose: () => {
+        const index = configurationListeners.indexOf(listener);
+        if (index >= 0) {
+          configurationListeners.splice(index, 1);
+        }
+      },
+    };
+  },
   onDidRenameFiles: () => ({ dispose: () => {} }),
   applyEdit: jest.fn().mockResolvedValue(true),
   getConfiguration: (section?: string) => ({
@@ -295,11 +316,52 @@ export const DocumentLink = class {
 };
 
 export const CancellationToken = class {
+  private listeners: Array<() => void> = [];
+
   constructor(public isCancellationRequested: boolean = false) {}
+
+  onCancellationRequested(listener: () => void): { dispose: () => void } {
+    this.listeners.push(listener);
+    return {
+      dispose: () => {
+        const index = this.listeners.indexOf(listener);
+        if (index >= 0) {
+          this.listeners.splice(index, 1);
+        }
+      },
+    };
+  }
+
+  cancel(): void {
+    if (this.isCancellationRequested) {
+      return;
+    }
+    this.isCancellationRequested = true;
+    for (const listener of [...this.listeners]) {
+      listener();
+    }
+  }
+};
+
+export const CancellationError = class extends Error {
+  constructor() {
+    super('Operation cancelled');
+    this.name = 'CancellationError';
+  }
 };
 
 export const commands = {
   executeCommand: jest.fn(),
+  registerCommand: jest.fn(() => ({ dispose: () => {} })),
+};
+
+export const languages = {
+  registerDocumentLinkProvider: jest.fn(() => ({ dispose: () => {} })),
+  registerHoverProvider: jest.fn(() => ({ dispose: () => {} })),
+};
+
+export const extensions = {
+  getExtension: jest.fn().mockReturnValue(undefined),
 };
 
 export enum TextEditorSelectionChangeKind {
