@@ -48,6 +48,15 @@ describe('resolveEditorInteractionMode', () => {
     expect(commands.executeCommand).not.toHaveBeenCalled();
   });
 
+  it('returns interactiveEdit when VSCodeVim is installed but inactive', async () => {
+    (extensions.getExtension as jest.Mock).mockReturnValue({ isActive: false });
+
+    const mode = await resolveEditorInteractionMode(true);
+
+    expect(mode).toBe('interactiveEdit');
+    expect(commands.executeCommand).not.toHaveBeenCalled();
+  });
+
   it('returns interactiveEdit when VSCodeVim is active and in Replace mode', async () => {
     (extensions.getExtension as jest.Mock).mockReturnValue({ isActive: true });
     (commands.executeCommand as jest.Mock).mockResolvedValue('Replace');
@@ -73,6 +82,15 @@ describe('resolveEditorInteractionMode', () => {
   it('falls back to interactiveEdit when mode lookup throws', async () => {
     (extensions.getExtension as jest.Mock).mockReturnValue({ isActive: true });
     (commands.executeCommand as jest.Mock).mockRejectedValue(new Error('boom'));
+
+    const mode = await resolveEditorInteractionMode(true);
+
+    expect(mode).toBe('interactiveEdit');
+  });
+
+  it('falls back to interactiveEdit when mode lookup returns a non-string', async () => {
+    (extensions.getExtension as jest.Mock).mockReturnValue({ isActive: true });
+    (commands.executeCommand as jest.Mock).mockResolvedValue(42);
 
     const mode = await resolveEditorInteractionMode(true);
 
