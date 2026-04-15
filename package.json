@@ -48,16 +48,6 @@
         "command": "mdInline.toggleDecorations",
         "title": "Toggle Markdown Decorations",
         "icon": "$(eye)"
-      },
-      {
-        "command": "markdown-inline-editor.openMermaidViewer",
-        "title": "Markdown Inline Editor: Open Mermaid Viewer",
-        "icon": "$(preview)"
-      },
-      {
-        "command": "markdown-inline-editor.openMermaidViewerBeside",
-        "title": "Markdown Inline Editor: Open Mermaid Viewer Beside",
-        "icon": "$(split-horizontal)"
       }
     ],
     "menus": {
@@ -138,20 +128,6 @@
           "default": true,
           "description": "Render LaTeX math inline ($...$ and $$...$$)",
           "markdownDescription": "Render LaTeX math inline ($...$ and $$...$$). When disabled, math delimiters are shown as plain text."
-        },
-        "markdownInlineEditor.mermaid.previewMode": {
-          "type": "string",
-          "default": "hover",
-          "enum": [
-            "hover",
-            "interactive-viewer"
-          ],
-          "enumDescriptions": [
-            "Show Mermaid diagrams in the existing hover preview when hovering the indicator.",
-            "Use the Mermaid indicator to open an interactive viewer with zoom and pan controls."
-          ],
-          "description": "Choose how Mermaid diagram previews open from the Mermaid indicator.",
-          "markdownDescription": "Choose how Mermaid diagram previews open from the Mermaid indicator. `hover` keeps the current hover image preview. `interactive-viewer` makes the indicator open an interactive viewer and changes Mermaid hover content to action links."
         },
         "markdownInlineEditor.mentions.enabled": {
           "type": "boolean",
