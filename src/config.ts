@@ -34,6 +34,13 @@ export const config = {
         .get<boolean>('links.singleClickOpen', false);
     },
   },
+  vim: {
+    enableInsertModeEditBehavior(): boolean {
+      return vscode.workspace
+        .getConfiguration(SECTION)
+        .get<boolean>('vim.enableInsertModeEditBehavior', false);
+    },
+  },
   decorations: {
     ghostFaintOpacity(): number {
       return vscode.workspace

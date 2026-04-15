@@ -245,6 +245,10 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       linkClickHandler.setEnabled(singleClickEnabled);
     }
 
+    if (event.affectsConfiguration('markdownInlineEditor.vim.enableInsertModeEditBehavior')) {
+      decorator.updateDecorationsForSelection();
+    }
+
     if (event.affectsConfiguration('markdownInlineEditor.colors')) {
       decorator.recreateColorDependentTypes();
     }

@@ -12,6 +12,7 @@ import { MermaidDiagramDecorations } from './decorator/mermaid-diagram-decoratio
 import { MathDecorations } from './math/math-decorations';
 import { renderMermaidSvg, svgToDataUri, createErrorSvg } from './mermaid/mermaid-renderer';
 import { MermaidHoverIndicatorDecorationType } from './decorations';
+import { resolveEditorInteractionMode } from './vim-mode';
 import type { EditorInteractionMode } from './vim-mode';
 
 /** Workspace state key prefix for per-file decoration toggle persistence. */
@@ -212,7 +213,7 @@ export class Decorator {
     }
 
     // Immediate update without debounce for selection changes
-    this.updateDecorationsInternal();
+    void this.updateDecorationsInternal();
   }
 
   // Checkbox behavior lives in decorator/checkbox-toggle.ts
@@ -277,7 +278,7 @@ export class Decorator {
       // This will use requestIdleCallback in browser or setTimeout in Node.js
       this.idleCallbackHandle = this.requestIdleCallback(() => {
         this.idleCallbackHandle = undefined;
-        this.updateDecorationsInternal();
+        void this.updateDecorationsInternal();
         this.pendingUpdateVersion.delete(cacheKey);
       }, { timeout: PERFORMANCE_CONSTANTS.IDLE_CALLBACK_TIMEOUT_MS });
     }, PERFORMANCE_CONSTANTS.DEBOUNCE_TIMEOUT_MS);
@@ -394,7 +395,7 @@ export class Decorator {
    * Internal method that performs the actual decoration update.
    * This orchestrates parsing, filtering, and application.
    */
-  private updateDecorationsInternal() {
+  private async updateDecorationsInternal(): Promise<void> {
     if (!this.activeEditor) {
       return;
     }
@@ -426,8 +427,17 @@ export class Decorator {
       return; // Document changed during parse, skip this update
     }
 
+    const interactionMode = await resolveEditorInteractionMode(
+      config.vim.enableInsertModeEditBehavior()
+    );
+
+    // Re-validate editor identity and version after async mode resolution.
+    if (!this.activeEditor || this.activeEditor.document !== document || document.version !== version) {
+      return;
+    }
+
     // Filter decorations based on selections (pass original text for offset adjustment)
-    const filtered = this.filterDecorations(decorations, scopes, text);
+    const filtered = this.filterDecorations(decorations, scopes, text, interactionMode);
 
     // Apply decorations
     this.applyDecorations(filtered);

@@ -6,8 +6,13 @@ jest.mock('../../parser', () => ({
   }
 }));
 
+jest.mock('../../vim-mode', () => ({
+  resolveEditorInteractionMode: jest.fn().mockResolvedValue('interactiveEdit'),
+}));
+
 import { Decorator } from '../../decorator';
 import type { DecorationRange, DecorationType } from '../../parser';
+import { resolveEditorInteractionMode } from '../../vim-mode';
 import type { EditorInteractionMode } from '../../vim-mode';
 import { isMarkerDecorationType } from '../decoration-categories';
 import { TextDocument, TextEditor, Selection, Position, Uri, Range } from '../../test/__mocks__/vscode';
@@ -52,6 +57,44 @@ function filterDecorationsForSelection(
 }
 
 describe('Decorator filtering behavior', () => {
+  it('resolves active interaction mode before filtering decorations', async () => {
+    const text = '- item';
+    const document = new TextDocument(Uri.file('test.md'), 'markdown', 7, text);
+    const editor = new TextEditor(document, [new Selection(new Position(0, 0), new Position(0, 0))]);
+    const parseCache = {
+      get: () => ({
+        version: document.version,
+        text,
+        decorations: [{ startPos: 0, endPos: 2, type: 'listItem' as const }],
+        scopes: [],
+        mermaidBlocks: [],
+        mathRegions: [],
+      }),
+      invalidate: () => {},
+      clear: () => {},
+    };
+
+    (resolveEditorInteractionMode as jest.Mock).mockResolvedValue('viewOnly');
+
+    const decorator = new Decorator(parseCache as any) as unknown as {
+      activeEditor: ReturnType<typeof TextEditor>;
+      updateDecorationsForSelection: () => void;
+      applyDecorations: jest.Mock;
+    };
+    decorator.activeEditor = editor;
+
+    const applySpy = jest.spyOn(decorator as any, 'applyDecorations');
+
+    decorator.updateDecorationsForSelection();
+    await Promise.resolve();
+
+    expect(resolveEditorInteractionMode).toHaveBeenCalledWith(false);
+    expect(applySpy).toHaveBeenCalledTimes(1);
+
+    const filtered = applySpy.mock.calls[0][0] as Map<DecorationType, unknown[]>;
+    expect(filtered.get('listItem')?.length).toBe(1);
+  });
+
   it('keeps semantic styling while revealing markers on active line', () => {
     const text = '**bold**';
     const decorations: DecorationRange[] = [

@@ -87,6 +87,12 @@
           "description": "Apply decorators in diff view",
           "markdownDescription": "Apply markdown decorations in diff views. Disabled by default to show raw syntax for easier review."
         },
+        "markdownInlineEditor.vim.enableInsertModeEditBehavior": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled and VSCodeVim is active, only use interactive edit behavior in Insert, Replace, and SurroundInputMode; other Vim modes keep rendered markdown stable.",
+          "markdownDescription": "When enabled and VSCodeVim is active, the extension only enters its interactive edit behavior in `Insert`, `Replace`, and `SurroundInputMode`, while other Vim modes keep rendered markdown stable."
+        },
         "markdownInlineEditor.decorations.ghostFaintOpacity": {
           "type": "number",
           "default": 0.3,
