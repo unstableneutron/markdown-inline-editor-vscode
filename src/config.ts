@@ -65,6 +65,13 @@ export const config = {
         .get<boolean>('math.enabled', true);
     },
   },
+  mermaid: {
+    previewMode(): 'hover' | 'interactive-viewer' {
+      return vscode.workspace
+        .getConfiguration(SECTION)
+        .get<'hover' | 'interactive-viewer'>('mermaid.previewMode', 'hover');
+    },
+  },
   mentions: {
     /** If set, overrides GitHub context: true = force links on, false = force off. Unset = use git remote auto-detect. */
     linksEnabled(): boolean | undefined {
