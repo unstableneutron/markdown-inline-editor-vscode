@@ -302,6 +302,10 @@ export const commands = {
   executeCommand: jest.fn(),
 };
 
+export const extensions = {
+  getExtension: jest.fn(),
+};
+
 export enum TextEditorSelectionChangeKind {
   Mouse = 1,
   Keyboard = 2,
