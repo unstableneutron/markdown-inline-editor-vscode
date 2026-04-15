@@ -11,6 +11,19 @@ import { MarkdownParser } from './parser';
 import { MarkdownParseCache } from './markdown-parse-cache';
 import { initMermaidRenderer, disposeMermaidRenderer } from './mermaid/mermaid-renderer';
 import { processSvg } from './mermaid/svg-processor';
+import { resolveEditorInteractionMode } from './vim-mode';
+import { startVimModeWatcher } from './vim-mode-watcher';
+
+const MARKDOWN_LANGUAGE_IDS = new Set([
+  'markdown',
+  'md',
+  'mdx',
+  'skill',
+  'markdoc',
+  'mdc',
+  'juliamarkdown',
+  'rmarkdown',
+]);
 
 /**
  * Checks if a recommended extension is installed and optionally shows a notification.
@@ -152,6 +165,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const linkClickHandler = new LinkClickHandler(parseCache);
   const singleClickEnabled = config.links.singleClickOpen();
   linkClickHandler.setEnabled(singleClickEnabled);
+  const vimModeWatcher = startVimModeWatcher({
+    isEnabled: () => config.vim.enableInsertModeEditBehavior(),
+    hasActiveEditor: () => {
+      const editor = decorator.activeEditor;
+      return editor !== undefined && MARKDOWN_LANGUAGE_IDS.has(editor.document.languageId);
+    },
+    resolveInteractionMode: () => resolveEditorInteractionMode(true),
+    onInteractionModeChanged: () => decorator.updateDecorationsForSelection(),
+  });
 
   // Register command for toggling markdown decorations
   const toggleDecorationsCommand = vscode.commands.registerCommand(
@@ -277,6 +299,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(navigateToAnchorCommand);
   context.subscriptions.push({ dispose: () => decorator.dispose() });
   context.subscriptions.push({ dispose: () => linkClickHandler.dispose() });
+  context.subscriptions.push(vimModeWatcher);
 
   return { parseCache, decorator, svgProcessor: { processSvg } };
 }

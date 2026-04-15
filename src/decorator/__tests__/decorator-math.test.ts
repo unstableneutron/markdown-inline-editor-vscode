@@ -47,13 +47,13 @@ describe('Decorator - Math reveal on select', () => {
     jest.restoreAllMocks();
   });
 
-  it('applies math decoration when cursor is outside math region', () => {
+  it('applies math decoration when cursor is outside math region', async () => {
     const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, text);
     const cursorOutside = new Position(0, 0);
     const editor = new TextEditor(document, [new Selection(cursorOutside, cursorOutside)]);
     const decorator = createDecoratorWithMathCache();
     decorator.setActiveEditor(editor);
-    (decorator as any).updateDecorationsInternal();
+    await (decorator as any).updateDecorationsInternal();
 
     expect(decorator.mathDecorations.apply).toHaveBeenCalled();
     const calls = (decorator.mathDecorations.apply as jest.Mock).mock.calls;
@@ -63,13 +63,13 @@ describe('Decorator - Math reveal on select', () => {
     expect(regionsWithRanges[0].range).not.toBeNull();
   });
 
-  it('does not apply math decoration when cursor is inside math region', () => {
+  it('does not apply math decoration when cursor is inside math region', async () => {
     const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, text);
     const cursorInside = new Position(0, 10);
     const editor = new TextEditor(document, [new Selection(cursorInside, cursorInside)]);
     const decorator = createDecoratorWithMathCache();
     decorator.setActiveEditor(editor);
-    (decorator as any).updateDecorationsInternal();
+    await (decorator as any).updateDecorationsInternal();
 
     expect(decorator.mathDecorations.apply).toHaveBeenCalled();
     const calls = (decorator.mathDecorations.apply as jest.Mock).mock.calls;
@@ -79,13 +79,13 @@ describe('Decorator - Math reveal on select', () => {
     expect(regionsWithRanges[0].range).toBeNull();
   });
 
-  it('shows raw when selection overlaps math region', () => {
+  it('shows raw when selection overlaps math region', async () => {
     const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, text);
     const selection = new Selection(new Position(0, 5), new Position(0, 12));
     const editor = new TextEditor(document, [selection]);
     const decorator = createDecoratorWithMathCache();
     decorator.setActiveEditor(editor);
-    (decorator as any).updateDecorationsInternal();
+    await (decorator as any).updateDecorationsInternal();
 
     expect(decorator.mathDecorations.apply).toHaveBeenCalled();
     const calls = (decorator.mathDecorations.apply as jest.Mock).mock.calls;
@@ -94,7 +94,7 @@ describe('Decorator - Math reveal on select', () => {
     expect(regionsWithRanges[0].range).toBeNull();
   });
 
-  it('reveals raw fenced math content when cursor is inside fence body', () => {
+  it('reveals raw fenced math content when cursor is inside fence body', async () => {
     const fencedText = ['```math', '\\frac{1}{2}', '```'].join('\n');
     const fencedRegion = [
       { startPos: 0, endPos: fencedText.length, source: '\\frac{1}{2}\n', displayMode: true, numLines: 1 },
@@ -104,7 +104,7 @@ describe('Decorator - Math reveal on select', () => {
     const editor = new TextEditor(document, [new Selection(cursorInside, cursorInside)]);
     const decorator = createDecoratorWithMathCache(fencedText, fencedRegion);
     decorator.setActiveEditor(editor);
-    (decorator as any).updateDecorationsInternal();
+    await (decorator as any).updateDecorationsInternal();
 
     const lastCall = (decorator.mathDecorations.apply as jest.Mock).mock.calls.slice(-1)[0];
     const regionsWithRanges = lastCall[1];
@@ -112,7 +112,7 @@ describe('Decorator - Math reveal on select', () => {
     expect(regionsWithRanges[0].range).toBeNull();
   });
 
-  it('passes fenced math range for rendering when cursor is outside', () => {
+  it('passes fenced math range for rendering when cursor is outside', async () => {
     const fencedText = 'before\n```tex\n\\invalid{\n```';
     const fenceStart = 7;
     const fenceEnd = fencedText.length;
@@ -124,14 +124,14 @@ describe('Decorator - Math reveal on select', () => {
     const editor = new TextEditor(document, [new Selection(cursorOutside, cursorOutside)]);
     const decorator = createDecoratorWithMathCache(fencedText, fencedRegion);
     decorator.setActiveEditor(editor);
-    (decorator as any).updateDecorationsInternal();
+    await (decorator as any).updateDecorationsInternal();
 
     const lastCall = (decorator.mathDecorations.apply as jest.Mock).mock.calls.slice(-1)[0];
     const regionsWithRanges = lastCall[1];
     expect(regionsWithRanges[0].range).not.toBeNull();
   });
 
-  it('applies decorations for multiple math fences with numLines (height differs by body lines)', () => {
+  it('applies decorations for multiple math fences with numLines (height differs by body lines)', async () => {
     const text = 'pre\n```math\nx\n```\n```math\na\nb\nc\n```';
     const regions = [
       { startPos: 4, endPos: 18, source: 'x\n', displayMode: true, numLines: 1 },
@@ -141,7 +141,7 @@ describe('Decorator - Math reveal on select', () => {
     const editor = new TextEditor(document, [new Selection(new Position(0, 0), new Position(0, 0))]);
     const decorator = createDecoratorWithMathCache(text, regions);
     decorator.setActiveEditor(editor);
-    (decorator as any).updateDecorationsInternal();
+    await (decorator as any).updateDecorationsInternal();
 
     expect(decorator.mathDecorations.apply).toHaveBeenCalled();
     const lastCall = (decorator.mathDecorations.apply as jest.Mock).mock.calls.slice(-1)[0];
@@ -153,7 +153,7 @@ describe('Decorator - Math reveal on select', () => {
     expect(regionsWithRanges[1].range).not.toBeNull();
   });
 
-  it('invalid fence LaTeX: apply is called and does not throw (raw remains visible when render returns null)', () => {
+  it('invalid fence LaTeX: apply is called and does not throw (raw remains visible when render returns null)', async () => {
     const fencedText = 'pre\n```math\n\\invalid{\n```';
     const fencedRegion = [
       { startPos: 4, endPos: fencedText.length, source: '\\invalid{\n', displayMode: true, numLines: 1 },
@@ -162,27 +162,27 @@ describe('Decorator - Math reveal on select', () => {
     const editor = new TextEditor(document, [new Selection(new Position(0, 0), new Position(0, 0))]);
     const decorator = createDecoratorWithMathCache(fencedText, fencedRegion);
     decorator.setActiveEditor(editor);
-    expect(() => (decorator as any).updateDecorationsInternal()).not.toThrow();
+    await expect((decorator as any).updateDecorationsInternal()).resolves.toBeUndefined();
     expect(decorator.mathDecorations.apply).toHaveBeenCalled();
     const lastCall = (decorator.mathDecorations.apply as jest.Mock).mock.calls.slice(-1)[0];
     expect(lastCall[1]).toHaveLength(1);
     expect(lastCall[1][0].region.source).toBe('\\invalid{\n');
   });
 
-  it('clears math decorations when math setting is disabled', () => {
+  it('clears math decorations when math setting is disabled', async () => {
     jest.spyOn(config.math, 'enabled').mockReturnValue(false);
 
     const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, text);
     const editor = new TextEditor(document, [new Selection(new Position(0, 0), new Position(0, 0))]);
     const decorator = createDecoratorWithMathCache();
     decorator.setActiveEditor(editor);
-    (decorator as any).updateDecorationsInternal();
+    await (decorator as any).updateDecorationsInternal();
 
     expect(decorator.mathDecorations.clear).toHaveBeenCalled();
     expect(decorator.mathDecorations.apply).not.toHaveBeenCalled();
   });
 
-  it('delimiter math and fence math in same document: both get ranges when cursor outside', () => {
+  it('delimiter math and fence math in same document: both get ranges when cursor outside', async () => {
     const docText = '$x$\n\n```math\nE=mc^2\n```';
     const regions = [
       { startPos: 0, endPos: 3, source: 'x', displayMode: false },
@@ -192,7 +192,7 @@ describe('Decorator - Math reveal on select', () => {
     const editor = new TextEditor(document, [new Selection(new Position(1, 0), new Position(1, 0))]);
     const decorator = createDecoratorWithMathCache(docText, regions);
     decorator.setActiveEditor(editor);
-    (decorator as any).updateDecorationsInternal();
+    await (decorator as any).updateDecorationsInternal();
 
     const lastCall = (decorator.mathDecorations.apply as jest.Mock).mock.calls.slice(-1)[0];
     const regionsWithRanges = lastCall[1];
