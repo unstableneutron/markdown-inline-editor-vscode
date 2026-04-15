@@ -1,5 +1,9 @@
 import { commands, extensions } from 'vscode';
-import { classifyVimMode, resolveEditorInteractionMode } from '../../vim-mode';
+import {
+  classifyVimMode,
+  resolveEditorInteractionMode,
+  resolveEditorInteractionModeFromVSCodeVimInternals,
+} from '../../vim-mode';
 
 const interactiveModes = ['Insert', 'Replace', 'SurroundInputMode'];
 const viewOnlyModes = [
@@ -93,6 +97,70 @@ describe('resolveEditorInteractionMode', () => {
     (commands.executeCommand as jest.Mock).mockResolvedValue(42);
 
     const mode = await resolveEditorInteractionMode(true);
+
+    expect(mode).toBe('interactiveEdit');
+  });
+});
+
+describe('resolveEditorInteractionModeFromVSCodeVimInternals', () => {
+  it('maps internal Normal mode to viewOnly', async () => {
+    const mode = await resolveEditorInteractionModeFromVSCodeVimInternals(
+      {
+        extensionPath: '/fake/vscodevim',
+        packageJSON: { main: './out/extension' },
+      } as any,
+      (modulePath: string) => {
+        if (modulePath === '/fake/vscodevim/out/extension') {
+          return {
+            getAndUpdateModeHandler: jest.fn().mockResolvedValue({
+              vimState: { currentMode: 0 },
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected module path: ${modulePath}`);
+      },
+    );
+
+    expect(mode).toBe('viewOnly');
+  });
+
+  it('returns undefined when the internal helper is unavailable', async () => {
+    const mode = await resolveEditorInteractionModeFromVSCodeVimInternals(
+      {
+        extensionPath: '/fake/vscodevim',
+        packageJSON: { main: './out/extension' },
+      } as any,
+      (modulePath: string) => {
+        if (modulePath === '/fake/vscodevim/out/extension') {
+          return {};
+        }
+
+        throw new Error(`Unexpected module path: ${modulePath}`);
+      },
+    );
+
+    expect(mode).toBeUndefined();
+  });
+
+  it('maps internal string Insert mode to interactiveEdit', async () => {
+    const mode = await resolveEditorInteractionModeFromVSCodeVimInternals(
+      {
+        extensionPath: '/fake/vscodevim',
+        packageJSON: { main: './out/extension' },
+      } as any,
+      (modulePath: string) => {
+        if (modulePath === '/fake/vscodevim/out/extension') {
+          return {
+            getAndUpdateModeHandler: jest.fn().mockResolvedValue({
+              vimState: { currentMode: 'Insert' },
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected module path: ${modulePath}`);
+      },
+    );
 
     expect(mode).toBe('interactiveEdit');
   });

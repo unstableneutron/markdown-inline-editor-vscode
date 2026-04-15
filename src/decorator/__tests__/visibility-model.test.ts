@@ -254,8 +254,8 @@ describe('filterDecorationsForEditor — view-only mode', () => {
       'viewOnly',
     );
 
-    expect(result.get('transparent')?.length).toBe(2);
     expect(result.get('code')?.length).toBe(1);
+    expect(result.get('transparent')?.length).toBe(2);
   });
 
   it('keeps heading styling on the active line', () => {
