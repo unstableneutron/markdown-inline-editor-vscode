@@ -174,6 +174,16 @@ export const TextDocument = MockTextDocument as any;
 
 let mockUntitledDocumentCounter = 0;
 
+const DEFAULT_MERMAID_MARKDOWN_DOCUMENT = [
+  '# Mermaid fixture',
+  '',
+  '```mermaid',
+  'graph TD',
+  '  A[Start] --> B[End]',
+  '```',
+  '',
+].join('\n');
+
 function createMockTextDocument(input: any): MockTextDocument {
   if (input instanceof MockTextDocument) {
     return input;
@@ -191,9 +201,16 @@ function createMockTextDocument(input: any): MockTextDocument {
     return new MockTextDocument(uri as any, languageId, 1, text);
   }
 
+  const uriLikeInput =
+    input &&
+    typeof input === 'object' &&
+    typeof input.toString === 'function' &&
+    typeof input.scheme === 'string';
   const uriString = typeof input === 'string' ? input : input?.toString?.() ?? 'untitled:/mock.txt';
   const languageId = /\.(md|markdown)$/i.test(uriString) ? 'markdown' : 'plaintext';
-  return new MockTextDocument(Uri.parse(uriString) as any, languageId, 1, '');
+  const uri = uriLikeInput ? input : Uri.parse(uriString);
+  const text = uriLikeInput && languageId === 'markdown' ? DEFAULT_MERMAID_MARKDOWN_DOCUMENT : '';
+  return new MockTextDocument(uri as any, languageId, 1, text);
 }
 
 class MockTextEditor {

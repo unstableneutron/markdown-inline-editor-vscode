@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { window, workspace, ViewColumn } from '../../test/__mocks__/vscode';
+import { Uri, window, workspace, ViewColumn } from '../../test/__mocks__/vscode';
 import {
   MermaidViewerPanel,
   sanitizeMermaidViewerSvg,
@@ -9,7 +9,7 @@ import {
 
 const REALISTIC_MERMAID_SVG_FIXTURE_PATH = resolve(
   process.cwd(),
-  'node_modules/.gitchamber/github.com/1jehuang/mermaid-rs-renderer/docs/comparisons/state_nested_official.svg',
+  'src/mermaid/__tests__/fixtures/mermaid-like.svg',
 );
 const REALISTIC_MERMAID_SVG = readFileSync(REALISTIC_MERMAID_SVG_FIXTURE_PATH, 'utf8');
 
@@ -48,6 +48,31 @@ describe('sanitizeMermaidViewerSvg', () => {
     expect(sanitizedSvg).toContain('<style>');
     expect(sanitizedSvg).toContain('#my-svg');
     expect(sanitizedSvg).toMatch(/style="[^"]*max-width:[^"]*background-color:[^"]*"/);
+  });
+
+  it('preserves safe data:image href content while stripping unsafe targets', () => {
+    const safePngHref = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO1f9s8AAAAASUVORK5CYII=';
+    const safeGifHref = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+    const mixedSvg = [
+      '<svg xmlns:xlink="http://www.w3.org/1999/xlink">',
+      '  <defs><circle id="local-node" cx="4" cy="4" r="4" /></defs>',
+      '  <use href="#local-node" />',
+      `  <image href="${safePngHref}" />`,
+      `  <image xlink:href="${safeGifHref}" />`,
+      '  <image href="data:text/html;base64,PGgxPm5vcGU8L2gxPg==" />',
+      '  <image href="https://example.com/remote.png" />',
+      '  <image xlink:href="javascript:alert(1)" />',
+      '</svg>',
+    ].join('');
+
+    const sanitizedSvg = sanitizeMermaidViewerSvg(mixedSvg);
+
+    expect(sanitizedSvg).toContain('href="#local-node"');
+    expect(sanitizedSvg).toContain(`href="${safePngHref}"`);
+    expect(sanitizedSvg).toContain(`xlink:href="${safeGifHref}"`);
+    expect(sanitizedSvg).not.toContain('data:text/html');
+    expect(sanitizedSvg).not.toContain('https://example.com/remote.png');
+    expect(sanitizedSvg).not.toContain('javascript:alert(1)');
   });
 });
 
@@ -201,6 +226,20 @@ describe('MermaidViewerPanel', () => {
     const editor = await window.showTextDocument(document, { viewColumn: ViewColumn.Two });
 
     expect(document.getText()).toBe('# Mermaid fixture');
+    expect(editor.document).toBe(document);
+    expect(editor.viewColumn).toBe(ViewColumn.Two);
+    expect(window.activeTextEditor).toBe(editor);
+    expect(window.visibleTextEditors).toContain(editor);
+  });
+
+  it('opens URI-based markdown documents with a minimal Mermaid fixture and shows them in an editor', async () => {
+    const document = await workspace.openTextDocument(Uri.parse('untitled:/mock-mermaid.md'));
+    const editor = await window.showTextDocument(document, { viewColumn: ViewColumn.Two });
+
+    expect(document.languageId).toBe('markdown');
+    expect(document.getText()).toContain('# Mermaid fixture');
+    expect(document.getText()).toContain('```mermaid');
+    expect(document.getText()).toContain('graph TD');
     expect(editor.document).toBe(document);
     expect(editor.viewColumn).toBe(ViewColumn.Two);
     expect(window.activeTextEditor).toBe(editor);

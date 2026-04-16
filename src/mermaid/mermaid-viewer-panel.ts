@@ -11,14 +11,28 @@ export interface MermaidViewerPayload {
 const VIEWER_PANEL_TYPE = 'markdownInlineEditor.mermaidViewer';
 const VIEWER_DEFAULT_TITLE = 'Mermaid Preview';
 const SCRIPTABLE_SVG_TAG_NAMES = new Set(['script', 'foreignobject']);
+const SAFE_DATA_IMAGE_REFERENCE_PATTERN =
+  /^data:image\/(?:apng|avif|bmp|gif|ico|jpe?g|png|webp|x-icon)(?:;[a-z0-9.+-]+=[^;,]+)*(?:;base64)?,/i;
 
 function isDomElement(node: AnyNode | undefined): node is DomElement {
   return node?.type === 'tag';
 }
 
+function normalizeSvgReference(value: string): string {
+  return value.trim().replace(/[\u0000-\u0020]+/g, '');
+}
+
 function isLocalSvgReference(value: string): boolean {
-  const trimmedValue = value.trim();
-  return trimmedValue.length === 0 || trimmedValue.startsWith('#');
+  const normalizedValue = normalizeSvgReference(value);
+  return normalizedValue.length === 0 || normalizedValue.startsWith('#');
+}
+
+function isSafeDataImageReference(value: string): boolean {
+  return SAFE_DATA_IMAGE_REFERENCE_PATTERN.test(normalizeSvgReference(value));
+}
+
+function isSafeSvgReference(value: string): boolean {
+  return isLocalSvgReference(value) || isSafeDataImageReference(value);
 }
 
 export function sanitizeMermaidViewerSvg(svgMarkup: string): string | undefined {
@@ -53,7 +67,7 @@ export function sanitizeMermaidViewerSvg(svgMarkup: string): string | undefined 
 
       if (
         (normalizedAttributeName === 'href' || normalizedAttributeName === 'xlink:href') &&
-        !isLocalSvgReference(element.attribs[attributeName] ?? '')
+        !isSafeSvgReference(element.attribs[attributeName] ?? '')
       ) {
         $(element).removeAttr(attributeName);
       }
