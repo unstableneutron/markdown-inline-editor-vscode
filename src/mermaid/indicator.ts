@@ -8,6 +8,11 @@ export interface MermaidIndicatorOffsets {
   indicatorEnd: number;
 }
 
+/**
+ * Mermaid parser blocks use normalized (LF-only) offsets.
+ * This helper maps those offsets into original-document coordinates,
+ * using `originalText` as the CRLF-aware coordinate source when available.
+ */
 export function getMermaidIndicatorOffsets(
   block: MermaidBlock,
   normalizedText: string,
@@ -31,6 +36,10 @@ export function getMermaidIndicatorOffsets(
   };
 }
 
+/**
+ * Finds the Mermaid block whose indicator range contains `offset`.
+ * `offset` is expected in original-document coordinates.
+ */
 export function findMermaidBlockAtIndicatorOffset(
   blocks: MermaidBlock[],
   normalizedText: string,

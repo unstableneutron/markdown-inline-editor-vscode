@@ -22,9 +22,22 @@ describe('mermaid indicator helpers', () => {
     expect(findMermaidBlockAtIndicatorOffset(blocks, source, source, indicatorOffset)).toEqual(blocks[0]);
   });
 
-  it('keeps working for CRLF documents', () => {
-    const originalText = ['```mermaid', 'graph TD', '  A --> B', '```'].join('\r\n');
-    const indicatorOffset = originalText.indexOf('graph TD');
-    expect(findMermaidBlockAtIndicatorOffset(blocks, source, originalText, indicatorOffset)).toEqual(blocks[0]);
+  it('maps normalized block offsets into original CRLF coordinates', () => {
+    const normalizedText = ['intro', '```mermaid', 'graph TD', '  A --> B', '```'].join('\n');
+    const normalizedBlockText = ['```mermaid', 'graph TD', '  A --> B', '```'].join('\n');
+    const startPos = normalizedText.indexOf(normalizedBlockText);
+    const endPos = startPos + normalizedBlockText.length;
+    const block: MermaidBlock = { startPos, endPos, source: 'graph TD\n  A --> B', numLines: 2 };
+    const originalText = normalizedText.replace(/\n/g, '\r\n');
+
+    const offsets = getMermaidIndicatorOffsets(block, normalizedText, originalText);
+    expect(offsets).toEqual({
+      blockStart: 7,
+      blockEnd: 43,
+      indicatorStart: 19,
+      indicatorEnd: 20,
+    });
+
+    expect(findMermaidBlockAtIndicatorOffset([block], normalizedText, originalText, 19)).toEqual(block);
   });
 });
