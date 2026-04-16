@@ -4,6 +4,9 @@ import { shouldSkipInDiffView } from './diff-context';
 import { MarkdownParseCache } from './markdown-parse-cache';
 import { renderMermaidSvgNatural, createErrorSvg, svgToDataUri } from './mermaid/mermaid-renderer';
 import { svgToDataUriBase64 } from './mermaid/svg-processor';
+import { getMermaidIndicatorOffsets } from './mermaid/indicator';
+import { config } from './config';
+import { toCommandUri } from './link-targets';
 import * as cheerio from 'cheerio';
 
 /**
@@ -304,6 +307,8 @@ export class CodeBlockHoverProvider implements vscode.HoverProvider {
     }
 
     const hoverOffset = document.offsetAt(position);
+    const originalText = document.getText();
+    const mermaidPreviewMode = config.mermaid.previewMode();
 
     // Check Mermaid blocks from parser
     // Only trigger hover when hovering over the indicator decorator (⧉)
@@ -312,24 +317,28 @@ export class CodeBlockHoverProvider implements vscode.HoverProvider {
         return;
       }
 
-      const start = mapNormalizedToOriginal(block.startPos, text);
-      const end = mapNormalizedToOriginal(block.endPos, text);
-
-      // Find the content start (after opening fence line) where the indicator is placed
-      // This matches the logic in decorator.ts
-      const originalText = document.getText();
-      const openingFenceLineEnd = originalText.indexOf('\n', start);
-      const contentStart = openingFenceLineEnd !== -1 ? openingFenceLineEnd + 1 : start;
-      const indicatorEnd = contentStart + 1; // Indicator is 1 character wide
+      const offsets = getMermaidIndicatorOffsets(block, text, originalText);
+      if (!offsets) {
+        continue;
+      }
 
       // Only check if hover position is within the indicator area (not the entire block)
-      if (hoverOffset >= contentStart && hoverOffset < indicatorEnd) {
+      if (hoverOffset >= offsets.indicatorStart && hoverOffset < offsets.indicatorEnd) {
+        if (mermaidPreviewMode === 'interactive-viewer') {
+          return this.createMermaidActionHover(
+            document,
+            block.startPos,
+            offsets.blockStart,
+            offsets.blockEnd,
+          );
+        }
+
         return this.createHoverForCodeBlock(
           block.source,
           'mermaid',
           document,
-          start,
-          end,
+          offsets.blockStart,
+          offsets.blockEnd,
           token
         );
       }
@@ -412,6 +421,45 @@ export class CodeBlockHoverProvider implements vscode.HoverProvider {
     }
 
     return undefined;
+  }
+
+  private createMermaidActionHover(
+    document: vscode.TextDocument,
+    blockStartPos: number,
+    start: number,
+    end: number,
+  ): vscode.Hover {
+    const markdown = new vscode.MarkdownString();
+    markdown.isTrusted = true;
+
+    const openViewerUri = toCommandUri('markdown-inline-editor.openMermaidViewer', [
+      document.uri.toString(),
+      blockStartPos,
+    ]);
+    const openBesideUri = toCommandUri('markdown-inline-editor.openMermaidViewerBeside', [
+      document.uri.toString(),
+      blockStartPos,
+    ]);
+
+    markdown.appendMarkdown('**Mermaid diagram**\n\n');
+    markdown.appendMarkdown(
+      `[Open viewer](${openViewerUri.toString()}) · [Open beside](${openBesideUri.toString()})`
+    );
+
+    return new vscode.Hover(markdown, this.createHoverRange(document, start, end));
+  }
+
+  private createHoverRange(
+    document: vscode.TextDocument,
+    start: number,
+    end: number,
+  ): vscode.Range {
+    const startPos = document.positionAt(start);
+    const endPos = document.positionAt(end);
+    return new vscode.Range(
+      new vscode.Position(startPos.line, 0),
+      new vscode.Position(endPos.line, Number.MAX_SAFE_INTEGER)
+    );
   }
 
   /**
@@ -503,16 +551,7 @@ export class CodeBlockHoverProvider implements vscode.HoverProvider {
         return undefined;
       }
 
-      // Expand hover range to full line(s) for better UX
-      // This makes it easier to trigger hover and includes the indicator area
-      const startPos = document.positionAt(start);
-      const endPos = document.positionAt(end);
-      const hoverRange = new vscode.Range(
-        new vscode.Position(startPos.line, 0),
-        new vscode.Position(endPos.line, Number.MAX_SAFE_INTEGER)
-      );
-
-      return new vscode.Hover(markdown, hoverRange);
+      return new vscode.Hover(markdown, this.createHoverRange(document, start, end));
     } catch (error) {
       console.warn(`[Code Block Hover] Failed to create hover for ${language}:`, error);
       return undefined;

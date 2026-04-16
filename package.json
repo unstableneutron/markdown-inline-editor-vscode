@@ -48,6 +48,16 @@
         "command": "mdInline.toggleDecorations",
         "title": "Toggle Markdown Decorations",
         "icon": "$(eye)"
+      },
+      {
+        "command": "markdown-inline-editor.openMermaidViewer",
+        "title": "Markdown Inline Editor: Open Mermaid Viewer",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "markdown-inline-editor.openMermaidViewerBeside",
+        "title": "Markdown Inline Editor: Open Mermaid Viewer Beside",
+        "icon": "$(split-horizontal)"
       }
     ],
     "menus": {

@@ -10,6 +10,7 @@ import { config } from './config';
 import { MarkdownParser } from './parser';
 import { MarkdownParseCache } from './markdown-parse-cache';
 import { initMermaidRenderer, disposeMermaidRenderer } from './mermaid/mermaid-renderer';
+import { MermaidViewerService } from './mermaid/mermaid-viewer-service';
 import { processSvg } from './mermaid/svg-processor';
 
 /**
@@ -112,6 +113,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const parser = new MarkdownParser();
   const parseCache = new MarkdownParseCache(parser);
   const decorator = new Decorator(parseCache, context.workspaceState);
+  const mermaidViewerService = new MermaidViewerService(parseCache);
   const diffViewApplyDecorations = config.diffView.applyDecorations();
   decorator.updateDiffViewDecorationSetting(!diffViewApplyDecorations);
   
@@ -201,6 +203,20 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     }
   );
 
+  const openMermaidViewerCommand = vscode.commands.registerCommand(
+    'markdown-inline-editor.openMermaidViewer',
+    async (documentUri?: string, blockStartPos?: number | string) => {
+      await mermaidViewerService.openFromCommand(documentUri, blockStartPos, false);
+    }
+  );
+
+  const openMermaidViewerBesideCommand = vscode.commands.registerCommand(
+    'markdown-inline-editor.openMermaidViewerBeside',
+    async (documentUri?: string, blockStartPos?: number | string) => {
+      await mermaidViewerService.openFromCommand(documentUri, blockStartPos, true);
+    }
+  );
+
   const changeActiveTextEditor = vscode.window.onDidChangeActiveTextEditor((editor) => {
     decorator.setActiveEditor(editor);
   });
@@ -271,8 +287,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(codeBlockHoverProviderDisposable);
   context.subscriptions.push(toggleDecorationsCommand);
   context.subscriptions.push(navigateToAnchorCommand);
+  context.subscriptions.push(openMermaidViewerCommand);
+  context.subscriptions.push(openMermaidViewerBesideCommand);
   context.subscriptions.push({ dispose: () => decorator.dispose() });
   context.subscriptions.push({ dispose: () => linkClickHandler.dispose() });
+  context.subscriptions.push(mermaidViewerService);
 
   return { parseCache, decorator, svgProcessor: { processSvg } };
 }
