@@ -1,3 +1,5 @@
+import * as cheerio from 'cheerio';
+import type { AnyNode, Element as DomElement } from 'domhandler';
 import * as vscode from 'vscode';
 
 export interface MermaidViewerPayload {
@@ -8,6 +10,58 @@ export interface MermaidViewerPayload {
 
 const VIEWER_PANEL_TYPE = 'markdownInlineEditor.mermaidViewer';
 const VIEWER_DEFAULT_TITLE = 'Mermaid Preview';
+const SCRIPTABLE_SVG_TAG_NAMES = new Set(['script', 'foreignobject']);
+
+function isDomElement(node: AnyNode | undefined): node is DomElement {
+  return node?.type === 'tag';
+}
+
+function isLocalSvgReference(value: string): boolean {
+  const trimmedValue = value.trim();
+  return trimmedValue.length === 0 || trimmedValue.startsWith('#');
+}
+
+export function sanitizeMermaidViewerSvg(svgMarkup: string): string | undefined {
+  if (typeof svgMarkup !== 'string' || !svgMarkup.trim()) {
+    return undefined;
+  }
+
+  const $ = cheerio.load(svgMarkup, { xmlMode: true });
+  const svgNode = $('svg').first();
+  if (svgNode.length === 0) {
+    return undefined;
+  }
+
+  const rootElement = svgNode.get(0);
+  if (!isDomElement(rootElement) || rootElement.name.toLowerCase() !== 'svg') {
+    return undefined;
+  }
+
+  for (const element of [rootElement, ...svgNode.find('*').toArray().filter(isDomElement)]) {
+    const tagName = element.name.toLowerCase();
+    if (SCRIPTABLE_SVG_TAG_NAMES.has(tagName)) {
+      $(element).remove();
+      continue;
+    }
+
+    for (const attributeName of Object.keys(element.attribs ?? {})) {
+      const normalizedAttributeName = attributeName.toLowerCase();
+      if (normalizedAttributeName.startsWith('on')) {
+        $(element).removeAttr(attributeName);
+        continue;
+      }
+
+      if (
+        (normalizedAttributeName === 'href' || normalizedAttributeName === 'xlink:href') &&
+        !isLocalSvgReference(element.attribs[attributeName] ?? '')
+      ) {
+        $(element).removeAttr(attributeName);
+      }
+    }
+  }
+
+  return $.xml(svgNode);
+}
 
 export class MermaidViewerPanel {
   private panel: vscode.WebviewPanel | undefined;
@@ -19,9 +73,10 @@ export class MermaidViewerPanel {
     this.lastPayload = payload;
     const panel = this.ensurePanel(payload.title, column);
     panel.title = payload.title;
+
     void panel.webview.postMessage({
       type: 'render',
-      svg: payload.svg,
+      svg: sanitizeMermaidViewerSvg(payload.svg) ?? '',
       source: payload.source,
       title: payload.title,
     });
@@ -95,7 +150,7 @@ export class MermaidViewerPanel {
     const nonce = this.createNonce();
     const csp = [
       "default-src 'none'",
-      `img-src ${webview.cspSource} data: https:`,
+      `img-src ${webview.cspSource} data:`,
       `style-src 'nonce-${nonce}'`,
       `script-src 'nonce-${nonce}'`,
     ].join('; ');
@@ -228,7 +283,6 @@ export class MermaidViewerPanel {
     const status = document.getElementById('status');
     const titleElement = document.getElementById('title');
     const sourceElement = document.getElementById('source');
-    const SCRIPTABLE_TAG_NAMES = new Set(['script', 'foreignobject']);
 
     let scale = 1;
     let panX = 0;
@@ -261,11 +315,7 @@ export class MermaidViewerPanel {
       return { width, height };
     }
 
-    function normalizeHref(value) {
-      return value.replace(/[\u0000-\u0020\u007F\s]+/g, '').toLowerCase();
-    }
-
-    function sanitizeSvgMarkup(svgMarkup) {
+    function parseSvgMarkup(svgMarkup) {
       if (typeof svgMarkup !== 'string' || !svgMarkup.trim()) {
         return undefined;
       }
@@ -280,31 +330,6 @@ export class MermaidViewerPanel {
       const svg = documentRoot.documentElement;
       if (!svg || svg.tagName.toLowerCase() !== 'svg') {
         return undefined;
-      }
-
-      const elements = [svg, ...svg.querySelectorAll('*')];
-      for (const element of elements) {
-        const tagName = element.tagName.toLowerCase();
-        if (SCRIPTABLE_TAG_NAMES.has(tagName)) {
-          element.remove();
-          continue;
-        }
-
-        for (const attribute of [...element.attributes]) {
-          const attributeName = attribute.name.toLowerCase();
-          if (attributeName.startsWith('on')) {
-            element.removeAttribute(attribute.name);
-            continue;
-          }
-
-          const normalizedValue = normalizeHref(attribute.value);
-          if (
-            (attributeName === 'href' || attributeName === 'xlink:href') &&
-            normalizedValue.startsWith('javascript:')
-          ) {
-            element.removeAttribute(attribute.name);
-          }
-        }
       }
 
       return svg;
@@ -353,10 +378,10 @@ export class MermaidViewerPanel {
       titleElement.textContent = payload.title || '${VIEWER_DEFAULT_TITLE}';
       sourceElement.textContent = payload.source || '';
 
-      const sanitizedSvg = sanitizeSvgMarkup(payload.svg || '');
+      const svg = parseSvgMarkup(payload.svg || '');
       canvas.replaceChildren();
-      if (sanitizedSvg) {
-        canvas.appendChild(sanitizedSvg);
+      if (svg) {
+        canvas.appendChild(svg);
       }
 
       requestAnimationFrame(() => fitToViewport());

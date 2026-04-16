@@ -172,11 +172,44 @@ class MockTextDocument {
 
 export const TextDocument = MockTextDocument as any;
 
+let mockUntitledDocumentCounter = 0;
+
+function createMockTextDocument(input: any): MockTextDocument {
+  if (input instanceof MockTextDocument) {
+    return input;
+  }
+
+  if (input && typeof input.getText === 'function' && typeof input.offsetAt === 'function') {
+    return input as MockTextDocument;
+  }
+
+  if (input && typeof input === 'object' && ('content' in input || 'language' in input)) {
+    const languageId = typeof input.language === 'string' ? input.language : 'plaintext';
+    const extension = languageId === 'markdown' ? 'md' : 'txt';
+    const uri = Uri.parse(`untitled:/mock-${mockUntitledDocumentCounter++}.${extension}`);
+    const text = typeof input.content === 'string' ? input.content : '';
+    return new MockTextDocument(uri as any, languageId, 1, text);
+  }
+
+  const uriString = typeof input === 'string' ? input : input?.toString?.() ?? 'untitled:/mock.txt';
+  const languageId = /\.(md|markdown)$/i.test(uriString) ? 'markdown' : 'plaintext';
+  return new MockTextDocument(Uri.parse(uriString) as any, languageId, 1, '');
+}
+
 class MockTextEditor {
+  public selection: MockSelection;
+  public viewColumn: ViewColumn = ViewColumn.One;
+
+  revealRange = jest.fn();
+
   constructor(
     public document: MockTextDocument,
     public selections: MockSelection[],
-  ) {}
+  ) {
+    this.selection =
+      selections[0] ??
+      new MockSelection({ line: 0, character: 0 }, { line: 0, character: 0 });
+  }
 
   setDecorations(_decorationType: any, _ranges: MockRange[]): void {
     // Mock implementation
@@ -327,6 +360,26 @@ export const window = {
   activeColorTheme: {
     kind: ColorThemeKind.Dark,
   },
+  showInformationMessage: jest.fn().mockResolvedValue(undefined),
+  showWarningMessage: jest.fn().mockResolvedValue(undefined),
+  showTextDocument: jest.fn(async (document: MockTextDocument, columnOrOptions?: ViewColumn | { viewColumn?: ViewColumn }) => {
+    const viewColumn =
+      typeof columnOrOptions === 'number'
+        ? columnOrOptions
+        : columnOrOptions?.viewColumn ?? ViewColumn.Active;
+    const existingEditor = window.visibleTextEditors.find(
+      (editor) => editor.document === document,
+    ) as MockTextEditor | undefined;
+    const editor = existingEditor ?? new MockTextEditor(document, []);
+    editor.viewColumn = viewColumn;
+
+    if (!existingEditor) {
+      window.visibleTextEditors.push(editor);
+    }
+
+    window.activeTextEditor = editor;
+    return editor;
+  }),
   onDidChangeActiveTextEditor: () => ({ dispose: () => {} }),
   onDidChangeTextEditorSelection: () => ({ dispose: () => {} }),
   onDidChangeActiveColorTheme: () => ({ dispose: () => {} }),
@@ -349,6 +402,7 @@ export const workspace = {
   onDidChangeTextDocument: () => ({ dispose: () => {} }),
   onDidChangeConfiguration: () => ({ dispose: () => {} }),
   onDidRenameFiles: () => ({ dispose: () => {} }),
+  openTextDocument: jest.fn(async (input: any) => createMockTextDocument(input)),
   applyEdit: jest.fn().mockResolvedValue(true),
   getConfiguration: (section?: string) => ({
     get: <T>(key: string, defaultValue: T): T => {
