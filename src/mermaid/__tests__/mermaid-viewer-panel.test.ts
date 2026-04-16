@@ -1,15 +1,22 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { Uri, window, workspace, ViewColumn } from '../../test/__mocks__/vscode';
+import {
+  Uri,
+  window,
+  workspace,
+  ViewColumn,
+  clearRegisteredMockTextDocuments,
+  registerMockTextDocument,
+} from '../../test/__mocks__/vscode';
 import {
   MermaidViewerPanel,
   sanitizeMermaidViewerSvg,
 } from '../mermaid-viewer-panel';
 
 const REALISTIC_MERMAID_SVG_FIXTURE_PATH = resolve(
-  process.cwd(),
-  'src/mermaid/__tests__/fixtures/mermaid-like.svg',
+  __dirname,
+  'fixtures/mermaid-like.svg',
 );
 const REALISTIC_MERMAID_SVG = readFileSync(REALISTIC_MERMAID_SVG_FIXTURE_PATH, 'utf8');
 
@@ -81,6 +88,7 @@ describe('MermaidViewerPanel', () => {
     (window.createWebviewPanel as jest.Mock).mockClear();
     (workspace.openTextDocument as jest.Mock).mockClear();
     (window.showTextDocument as jest.Mock).mockClear();
+    clearRegisteredMockTextDocuments();
     window.activeTextEditor = undefined;
     window.visibleTextEditors = [];
   });
@@ -258,10 +266,29 @@ describe('MermaidViewerPanel', () => {
     expect(window.visibleTextEditors).toContain(editor);
   });
 
-  it('opens URI-based markdown documents with a minimal Mermaid fixture and shows them in an editor', async () => {
+  it('opens unregistered URI-based markdown documents without injecting Mermaid-specific content', async () => {
     const document = await workspace.openTextDocument(Uri.parse('untitled:/mock-mermaid.md'));
     const editor = await window.showTextDocument(document, { viewColumn: ViewColumn.Two });
 
+    expect(document.languageId).toBe('markdown');
+    expect(document.getText()).toBe('');
+    expect(editor.document).toBe(document);
+    expect(editor.viewColumn).toBe(ViewColumn.Two);
+    expect(window.activeTextEditor).toBe(editor);
+    expect(window.visibleTextEditors).toContain(editor);
+  });
+
+  it('opens registered URI-based markdown documents with seeded Mermaid content', async () => {
+    const registeredUri = Uri.parse('untitled:/mock-mermaid.md');
+    const registeredDocument = registerMockTextDocument(registeredUri, {
+      language: 'markdown',
+      content: ['# Mermaid fixture', '', '```mermaid', 'graph TD', '  A[Start] --> B[End]', '```', ''].join('\n'),
+    });
+
+    const document = await workspace.openTextDocument(registeredUri);
+    const editor = await window.showTextDocument(document, { viewColumn: ViewColumn.Two });
+
+    expect(document).toBe(registeredDocument);
     expect(document.languageId).toBe('markdown');
     expect(document.getText()).toContain('# Mermaid fixture');
     expect(document.getText()).toContain('```mermaid');
@@ -287,6 +314,24 @@ describe('MermaidViewerPanel', () => {
 
     expect(firstEditor.viewColumn).toBe(ViewColumn.Three);
     expect(secondEditor.viewColumn).toBe(ViewColumn.Three);
+    expect(secondEditor.viewColumn).toBeGreaterThan(0);
+  });
+
+  it('resolves ViewColumn.Beside to a concrete adjacent editor column in the mock vscode API', async () => {
+    const firstDocument = await workspace.openTextDocument({
+      language: 'markdown',
+      content: '# First',
+    });
+    const firstEditor = await window.showTextDocument(firstDocument, { viewColumn: ViewColumn.Three });
+
+    const secondDocument = await workspace.openTextDocument({
+      language: 'markdown',
+      content: '# Second',
+    });
+    const secondEditor = await window.showTextDocument(secondDocument, ViewColumn.Beside);
+
+    expect(firstEditor.viewColumn).toBe(ViewColumn.Three);
+    expect(secondEditor.viewColumn).toBe(ViewColumn.Four);
     expect(secondEditor.viewColumn).toBeGreaterThan(0);
   });
 

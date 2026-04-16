@@ -174,15 +174,58 @@ export const TextDocument = MockTextDocument as any;
 
 let mockUntitledDocumentCounter = 0;
 
-const DEFAULT_MERMAID_MARKDOWN_DOCUMENT = [
-  '# Mermaid fixture',
-  '',
-  '```mermaid',
-  'graph TD',
-  '  A[Start] --> B[End]',
-  '```',
-  '',
-].join('\n');
+const registeredMockTextDocuments = new Map<string, MockTextDocument>();
+
+function isMockUriLike(input: unknown): input is { toString: () => string; scheme: string } {
+  return Boolean(
+    input &&
+      typeof input === 'object' &&
+      typeof (input as { toString?: unknown }).toString === 'function' &&
+      typeof (input as { scheme?: unknown }).scheme === 'string',
+  );
+}
+
+function inferMockLanguageId(uriString: string): string {
+  return /\.(md|markdown)$/i.test(uriString) ? 'markdown' : 'plaintext';
+}
+
+function createMockTextDocumentForUri(
+  uriInput: string | { toString: () => string; scheme: string },
+  text: string,
+  languageId?: string,
+): MockTextDocument {
+  const uri = isMockUriLike(uriInput) ? uriInput : Uri.parse(uriInput);
+  return new MockTextDocument(
+    uri as any,
+    languageId ?? inferMockLanguageId(uri.toString()),
+    1,
+    text,
+  );
+}
+
+/** @internal test helper */
+export function registerMockTextDocument(
+  uriInput: string | { toString: () => string; scheme: string },
+  documentOrOptions: MockTextDocument | { content: string; language?: string },
+): MockTextDocument {
+  const uri = isMockUriLike(uriInput) ? uriInput : Uri.parse(uriInput);
+  const document =
+    documentOrOptions instanceof MockTextDocument
+      ? createMockTextDocumentForUri(uri, documentOrOptions.getText(), documentOrOptions.languageId)
+      : createMockTextDocumentForUri(
+          uri,
+          documentOrOptions.content,
+          documentOrOptions.language,
+        );
+
+  registeredMockTextDocuments.set(uri.toString(), document);
+  return document;
+}
+
+/** @internal test helper */
+export function clearRegisteredMockTextDocuments(): void {
+  registeredMockTextDocuments.clear();
+}
 
 function createMockTextDocument(input: any): MockTextDocument {
   if (input instanceof MockTextDocument) {
@@ -201,16 +244,13 @@ function createMockTextDocument(input: any): MockTextDocument {
     return new MockTextDocument(uri as any, languageId, 1, text);
   }
 
-  const uriLikeInput =
-    input &&
-    typeof input === 'object' &&
-    typeof input.toString === 'function' &&
-    typeof input.scheme === 'string';
   const uriString = typeof input === 'string' ? input : input?.toString?.() ?? 'untitled:/mock.txt';
-  const languageId = /\.(md|markdown)$/i.test(uriString) ? 'markdown' : 'plaintext';
-  const uri = uriLikeInput ? input : Uri.parse(uriString);
-  const text = uriLikeInput && languageId === 'markdown' ? DEFAULT_MERMAID_MARKDOWN_DOCUMENT : '';
-  return new MockTextDocument(uri as any, languageId, 1, text);
+  const registeredDocument = registeredMockTextDocuments.get(uriString);
+  if (registeredDocument) {
+    return registeredDocument;
+  }
+
+  return createMockTextDocumentForUri(uriString, '');
 }
 
 class MockTextEditor {
@@ -370,7 +410,7 @@ export function resetTextEditorDecorationTypeOptionsCapture(): void {
   lastTextEditorDecorationTypeOptions = undefined;
 }
 
-function resolveMockActiveViewColumn(): ViewColumn {
+function resolveMockReferenceViewColumn(): ViewColumn {
   const activeViewColumn = window.activeTextEditor?.viewColumn;
   if (typeof activeViewColumn === 'number' && activeViewColumn > 0) {
     return activeViewColumn;
@@ -384,6 +424,20 @@ function resolveMockActiveViewColumn(): ViewColumn {
   }
 
   return ViewColumn.One;
+}
+
+function resolveMockRequestedViewColumn(requestedViewColumn: ViewColumn): ViewColumn {
+  const referenceViewColumn = resolveMockReferenceViewColumn();
+
+  if (requestedViewColumn === ViewColumn.Active) {
+    return referenceViewColumn;
+  }
+
+  if (requestedViewColumn === ViewColumn.Beside) {
+    return Math.min(referenceViewColumn + 1, ViewColumn.Nine) as ViewColumn;
+  }
+
+  return requestedViewColumn;
 }
 
 export const window = {
@@ -409,10 +463,7 @@ export const window = {
       typeof columnOrOptions === 'number'
         ? columnOrOptions
         : columnOrOptions?.viewColumn ?? ViewColumn.Active;
-    const viewColumn =
-      requestedViewColumn === ViewColumn.Active
-        ? resolveMockActiveViewColumn()
-        : requestedViewColumn;
+    const viewColumn = resolveMockRequestedViewColumn(requestedViewColumn);
     const existingEditor = window.visibleTextEditors.find(
       (editor) => editor.document === document,
     ) as MockTextEditor | undefined;
