@@ -370,6 +370,22 @@ export function resetTextEditorDecorationTypeOptionsCapture(): void {
   lastTextEditorDecorationTypeOptions = undefined;
 }
 
+function resolveMockActiveViewColumn(): ViewColumn {
+  const activeViewColumn = window.activeTextEditor?.viewColumn;
+  if (typeof activeViewColumn === 'number' && activeViewColumn > 0) {
+    return activeViewColumn;
+  }
+
+  const visibleViewColumn = window.visibleTextEditors.find(
+    (editor) => typeof editor?.viewColumn === 'number' && editor.viewColumn > 0,
+  )?.viewColumn;
+  if (typeof visibleViewColumn === 'number' && visibleViewColumn > 0) {
+    return visibleViewColumn;
+  }
+
+  return ViewColumn.One;
+}
+
 export const window = {
   createTextEditorDecorationType: jest.fn((options: unknown) => {
     lastTextEditorDecorationTypeOptions = options;
@@ -389,10 +405,14 @@ export const window = {
   showInformationMessage: jest.fn().mockResolvedValue(undefined),
   showWarningMessage: jest.fn().mockResolvedValue(undefined),
   showTextDocument: jest.fn(async (document: MockTextDocument, columnOrOptions?: ViewColumn | { viewColumn?: ViewColumn }) => {
-    const viewColumn =
+    const requestedViewColumn =
       typeof columnOrOptions === 'number'
         ? columnOrOptions
         : columnOrOptions?.viewColumn ?? ViewColumn.Active;
+    const viewColumn =
+      requestedViewColumn === ViewColumn.Active
+        ? resolveMockActiveViewColumn()
+        : requestedViewColumn;
     const existingEditor = window.visibleTextEditors.find(
       (editor) => editor.document === document,
     ) as MockTextEditor | undefined;

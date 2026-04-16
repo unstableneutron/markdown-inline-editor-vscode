@@ -258,13 +258,6 @@ export class MermaidViewerPanel {
       user-select: none;
     }
 
-    #canvas svg {
-      display: block;
-      overflow: visible;
-      max-width: none;
-      height: auto;
-    }
-
     #status {
       min-width: 54px;
       text-align: center;
@@ -299,6 +292,22 @@ export class MermaidViewerPanel {
     const status = document.getElementById('status');
     const titleElement = document.getElementById('title');
     const sourceElement = document.getElementById('source');
+    const renderRoot = canvas.attachShadow({ mode: 'open' });
+    const renderStyles = document.createElement('style');
+    renderStyles.textContent = [
+      ':host {',
+      '  display: block;',
+      '}',
+      'svg {',
+      '  display: block;',
+      '  overflow: visible;',
+      '  max-width: none;',
+      '  height: auto;',
+      '}',
+    ].join('\n');
+    const renderSurface = document.createElement('div');
+    renderSurface.setAttribute('part', 'svg-root');
+    renderRoot.append(renderStyles, renderSurface);
 
     let scale = 1;
     let panX = 0;
@@ -312,7 +321,7 @@ export class MermaidViewerPanel {
     }
 
     function getSvg() {
-      return canvas.querySelector('svg');
+      return renderSurface.querySelector('svg');
     }
 
     function getSvgSize() {
@@ -395,9 +404,9 @@ export class MermaidViewerPanel {
       sourceElement.textContent = payload.source || '';
 
       const svg = parseSvgMarkup(payload.svg || '');
-      canvas.replaceChildren();
+      renderSurface.replaceChildren();
       if (svg) {
-        canvas.appendChild(svg);
+        renderSurface.appendChild(svg);
       }
 
       requestAnimationFrame(() => fitToViewport());

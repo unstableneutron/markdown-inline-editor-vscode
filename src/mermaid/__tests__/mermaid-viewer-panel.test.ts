@@ -218,6 +218,32 @@ describe('MermaidViewerPanel', () => {
     expect(html).not.toContain('Math.min(widthScale, heightScale, 1)');
   });
 
+  it('isolates rendered svg markup inside a shadow-rooted render surface', () => {
+    const panel = new MermaidViewerPanel();
+
+    panel.open(
+      {
+        title: 'Mermaid Preview',
+        svg: '<svg viewBox="0 0 10 10"><style>body{display:none}#toolbar{display:none}</style></svg>',
+        source: 'graph TD\nA-->B',
+      },
+      ViewColumn.One,
+    );
+
+    const createdPanel = (window.createWebviewPanel as jest.Mock).mock.results[0].value;
+    const html = createdPanel.webview.html as string;
+
+    expect(html).toContain("const renderRoot = canvas.attachShadow({ mode: 'open' });");
+    expect(html).toContain("const renderSurface = document.createElement('div');");
+    expect(html).toContain("renderSurface.setAttribute('part', 'svg-root');");
+    expect(html).toContain('renderRoot.append(renderStyles, renderSurface);');
+    expect(html).toContain('return renderSurface.querySelector(\'svg\');');
+    expect(html).toContain('renderSurface.replaceChildren();');
+    expect(html).toContain('renderSurface.appendChild(svg);');
+    expect(html).toContain(':host {');
+    expect(html).not.toContain('#canvas svg {');
+  });
+
   it('supports opening a mock text document and showing it in an editor', async () => {
     const document = await workspace.openTextDocument({
       language: 'markdown',
@@ -244,6 +270,24 @@ describe('MermaidViewerPanel', () => {
     expect(editor.viewColumn).toBe(ViewColumn.Two);
     expect(window.activeTextEditor).toBe(editor);
     expect(window.visibleTextEditors).toContain(editor);
+  });
+
+  it('resolves ViewColumn.Active to a concrete editor column in the mock vscode API', async () => {
+    const firstDocument = await workspace.openTextDocument({
+      language: 'markdown',
+      content: '# First',
+    });
+    const firstEditor = await window.showTextDocument(firstDocument, { viewColumn: ViewColumn.Three });
+
+    const secondDocument = await workspace.openTextDocument({
+      language: 'markdown',
+      content: '# Second',
+    });
+    const secondEditor = await window.showTextDocument(secondDocument, ViewColumn.Active);
+
+    expect(firstEditor.viewColumn).toBe(ViewColumn.Three);
+    expect(secondEditor.viewColumn).toBe(ViewColumn.Three);
+    expect(secondEditor.viewColumn).toBeGreaterThan(0);
   });
 
   it('mirrors the webview panel disposal event signature closely enough for tests', () => {
