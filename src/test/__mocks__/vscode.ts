@@ -192,6 +192,112 @@ export enum ColorThemeKind {
   HighContrastLight = 4,
 }
 
+export enum ViewColumn {
+  Active = -1,
+  Beside = -2,
+  One = 1,
+  Two = 2,
+  Three = 3,
+  Four = 4,
+  Five = 5,
+  Six = 6,
+  Seven = 7,
+  Eight = 8,
+  Nine = 9,
+}
+
+class MockWebview {
+  html = "";
+  options: Record<string, unknown> = {};
+  cspSource = 'vscode-test-webview';
+
+  private readonly messageListeners: Array<(message: unknown) => void> = [];
+
+  postMessage = jest.fn().mockResolvedValue(true);
+
+  asWebviewUri(uri: unknown): unknown {
+    return uri;
+  }
+
+  onDidReceiveMessage(
+    listener: (message: unknown) => void,
+    thisArgs?: unknown,
+    disposables?: Array<{ dispose: () => void }>,
+  ): { dispose: () => void } {
+    const boundListener = thisArgs ? listener.bind(thisArgs) : listener;
+    this.messageListeners.push(boundListener);
+
+    const disposable = {
+      dispose: () => {
+        const index = this.messageListeners.indexOf(boundListener);
+        if (index >= 0) {
+          this.messageListeners.splice(index, 1);
+        }
+      },
+    };
+
+    disposables?.push(disposable);
+    return disposable;
+  }
+
+  /** @internal test helper */
+  __fireMessage(message: unknown): void {
+    for (const listener of [...this.messageListeners]) {
+      listener(message);
+    }
+  }
+}
+
+class MockWebviewPanel {
+  public readonly webview = new MockWebview();
+  public active = true;
+  public visible = true;
+
+  private readonly disposeListeners: Array<() => void> = [];
+  private isDisposed = false;
+
+  constructor(
+    public viewType: string,
+    public title: string,
+    public viewColumn: ViewColumn,
+    public options: Record<string, unknown>,
+  ) {}
+
+  reveal = jest.fn((viewColumn?: ViewColumn) => {
+    if (viewColumn !== undefined) {
+      this.viewColumn = viewColumn;
+    }
+    this.active = true;
+    this.visible = true;
+  });
+
+  onDidDispose(listener: () => void): { dispose: () => void } {
+    this.disposeListeners.push(listener);
+    return {
+      dispose: () => {
+        const index = this.disposeListeners.indexOf(listener);
+        if (index >= 0) {
+          this.disposeListeners.splice(index, 1);
+        }
+      },
+    };
+  }
+
+  dispose = jest.fn(() => {
+    if (this.isDisposed) {
+      return;
+    }
+
+    this.isDisposed = true;
+    this.active = false;
+    this.visible = false;
+
+    for (const listener of [...this.disposeListeners]) {
+      listener();
+    }
+  });
+}
+
 /** Last options passed to `createTextEditorDecorationType` (for tests that need to assert omit-`color` behavior). */
 let lastTextEditorDecorationTypeOptions: unknown;
 
@@ -210,6 +316,12 @@ export const window = {
     lastTextEditorDecorationTypeOptions = options;
     return { dispose: jest.fn() };
   }),
+  createWebviewPanel: jest.fn((
+    viewType: string,
+    title: string,
+    viewColumn: ViewColumn,
+    options: Record<string, unknown> = {},
+  ) => new MockWebviewPanel(viewType, title, viewColumn, options)),
   activeTextEditor: undefined as any,
   visibleTextEditors: [] as any[],
   activeColorTheme: {
