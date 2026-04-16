@@ -11,6 +11,7 @@ import { MarkdownParser } from './parser';
 import { MarkdownParseCache } from './markdown-parse-cache';
 import { initMermaidRenderer, disposeMermaidRenderer } from './mermaid/mermaid-renderer';
 import { MermaidViewerService } from './mermaid/mermaid-viewer-service';
+import { MermaidViewerClickHandler } from './mermaid/mermaid-viewer-click-handler';
 import { processSvg } from './mermaid/svg-processor';
 
 /**
@@ -155,6 +156,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const singleClickEnabled = config.links.singleClickOpen();
   linkClickHandler.setEnabled(singleClickEnabled);
 
+  const mermaidViewerClickHandler = new MermaidViewerClickHandler(
+    parseCache,
+    mermaidViewerService,
+    () => config.mermaid.previewMode(),
+  );
+  mermaidViewerClickHandler.enable();
+
   // Register command for toggling markdown decorations
   const toggleDecorationsCommand = vscode.commands.registerCommand(
     'mdInline.toggleDecorations',
@@ -291,6 +299,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(openMermaidViewerBesideCommand);
   context.subscriptions.push({ dispose: () => decorator.dispose() });
   context.subscriptions.push({ dispose: () => linkClickHandler.dispose() });
+  context.subscriptions.push(mermaidViewerClickHandler);
   context.subscriptions.push(mermaidViewerService);
 
   return { parseCache, decorator, svgProcessor: { processSvg } };
