@@ -1,4 +1,4 @@
-import { Range, Position, TextEditor, TextDocument, TextDocumentChangeEvent, window, TextEditorSelectionChangeKind, ColorThemeKind, workspace, DecorationOptions, Memento } from 'vscode';
+import { Range, TextEditor, TextDocument, TextDocumentChangeEvent, window, TextEditorSelectionChangeKind, ColorThemeKind, workspace, DecorationOptions, Memento } from 'vscode';
 import { createHash } from 'crypto';
 import { DecorationRange, DecorationType, MermaidBlock, MathRegion, ScopeRange } from './parser';
 import { mapNormalizedToOriginal } from './position-mapping';
@@ -11,6 +11,7 @@ import { handleCheckboxClick } from './decorator/checkbox-toggle';
 import { MermaidDiagramDecorations } from './decorator/mermaid-diagram-decorations';
 import { MathDecorations } from './math/math-decorations';
 import { renderMermaidSvg, svgToDataUri, createErrorSvg } from './mermaid/mermaid-renderer';
+import { getMermaidIndicatorOffsets } from './mermaid/indicator';
 import { MermaidHoverIndicatorDecorationType } from './decorations';
 
 /** Workspace state key prefix for per-file decoration toggle persistence. */
@@ -312,9 +313,19 @@ export class Decorator {
    * @returns {boolean} True if decorations are enabled
    */
   isEnabled(): boolean {
-    const uri = this.activeEditor?.document.uri.toString();
-    if (!uri) { return true; }
-    return this.isEnabledForUri(uri);
+    const document = this.activeEditor?.document;
+    if (!document) { return true; }
+    return this.isEnabledForDocument(document);
+  }
+
+  /**
+   * Check if decorations are enabled for a specific document.
+   *
+   * @param {TextDocument} document - The document to inspect
+   * @returns {boolean} True if decorations are enabled for that document
+   */
+  isEnabledForDocument(document: TextDocument): boolean {
+    return this.isEnabledForUri(document.uri.toString());
   }
 
   /**
@@ -583,19 +594,14 @@ export class Decorator {
           return null;
         }
 
-        // Add indicator decoration at the start of the mermaid block content
-        // Place it at the beginning of the first line of content (after opening fence line).
-        const blockStart = mapNormalizedToOriginal(block.startPos, text);
-        const openingFenceLineEnd = originalText.indexOf('\n', blockStart);
-        const contentStart = openingFenceLineEnd !== -1 ? openingFenceLineEnd + 1 : blockStart;
+        const indicatorOffsets = getMermaidIndicatorOffsets(block, text, originalText);
+        if (!indicatorOffsets) {
+          return null;
+        }
 
-        const contentStartPos = editor.document.positionAt(contentStart);
-        // Create a small range (1 character) at the start of content for the indicator.
-        const line = editor.document.lineAt(contentStartPos.line);
-        const indicatorEndChar = Math.min(contentStartPos.character + 1, line.text.length);
         const indicatorRange = new Range(
-          contentStartPos,
-          new Position(contentStartPos.line, indicatorEndChar)
+          editor.document.positionAt(indicatorOffsets.indicatorStart),
+          editor.document.positionAt(indicatorOffsets.indicatorEnd)
         );
 
         const key = getMermaidBlockCacheKey(block, theme, fontFamily);

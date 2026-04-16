@@ -118,6 +118,57 @@ describe('MermaidViewerService', () => {
     );
   });
 
+  it('ignores stale render completions when a newer request finishes first', async () => {
+    const firstBlock: MermaidBlock = {
+      startPos: 0,
+      endPos: markdown.length,
+      source: 'graph TD\nA-->B',
+      numLines: 2,
+    };
+    const secondBlock: MermaidBlock = {
+      startPos: 0,
+      endPos: markdown.length,
+      source: 'graph LR\nC-->D',
+      numLines: 2,
+    };
+    const document = new TextDocument(Uri.file('/tmp/test.md'), 'markdown', 1, markdown);
+    const panel = {
+      open: jest.fn(),
+      dispose: jest.fn(),
+    } as any;
+
+    let resolveFirst!: (svg: string) => void;
+    let resolveSecond!: (svg: string) => void;
+    renderMermaidSvgNaturalMock
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFirst = resolve;
+      }))
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveSecond = resolve;
+      }));
+
+    const service = new MermaidViewerService({ get: jest.fn() } as any, panel);
+    const firstRequest = service.openFromBlock(document as any, firstBlock, false);
+    const secondRequest = service.openFromBlock(document as any, secondBlock, false);
+
+    resolveSecond('<svg data-request="second"></svg>');
+    await secondRequest;
+
+    expect(panel.open).toHaveBeenCalledTimes(1);
+    expect(panel.open).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        svg: '<svg data-request="second"></svg>',
+        source: secondBlock.source,
+      }),
+      ViewColumn.One,
+    );
+
+    resolveFirst('<svg data-request="first"></svg>');
+    await firstRequest;
+
+    expect(panel.open).toHaveBeenCalledTimes(1);
+  });
+
   it('opens from command arguments using document URI + block start position', async () => {
     const commandMarkdown = [
       '```mermaid',

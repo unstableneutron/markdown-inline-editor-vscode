@@ -42,6 +42,8 @@ function normalizeBlockStartPos(blockStartPos?: number | string): number | undef
 }
 
 export class MermaidViewerService implements vscode.Disposable {
+  private latestOpenRequestId = 0;
+
   constructor(
     private readonly parseCache: MarkdownParseCache,
     private readonly panel: MermaidViewerPanel = new MermaidViewerPanel(),
@@ -52,6 +54,7 @@ export class MermaidViewerService implements vscode.Disposable {
     block: MermaidBlock,
     openBeside: boolean,
   ): Promise<void> {
+    const requestId = ++this.latestOpenRequestId;
     const targetColumn = openBeside ? vscode.ViewColumn.Beside : resolveEditorColumn();
     const darkTheme = isDarkTheme();
 
@@ -64,6 +67,10 @@ export class MermaidViewerService implements vscode.Disposable {
         fontFamily,
       });
 
+      if (requestId !== this.latestOpenRequestId) {
+        return;
+      }
+
       this.panel.open(
         {
           title: VIEWER_TITLE,
@@ -73,6 +80,10 @@ export class MermaidViewerService implements vscode.Disposable {
         targetColumn,
       );
     } catch (error) {
+      if (requestId !== this.latestOpenRequestId) {
+        return;
+      }
+
       const message = error instanceof Error ? error.message : String(error);
       this.panel.open(
         {

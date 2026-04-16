@@ -84,6 +84,54 @@ describe('Decorator - Mermaid diagrams', () => {
     expect(applyMock).toHaveBeenCalledTimes(1);
   });
 
+  it('places the Mermaid indicator on the first content line in CRLF documents', async () => {
+    const normalizedBlockText = [
+      '```mermaid',
+      'graph TD',
+      '  A --> B',
+      '```',
+    ].join('\n');
+    const normalizedText = ['Intro', normalizedBlockText, 'After'].join('\n');
+    const originalText = normalizedText.replace(/\n/g, '\r\n');
+    const blockStart = normalizedText.indexOf(normalizedBlockText);
+    const blockEnd = blockStart + normalizedBlockText.length;
+    const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, originalText);
+    const outsidePosition = document.positionAt(originalText.indexOf('After'));
+    const editor = new TextEditor(document, [new Selection(outsidePosition, outsidePosition)]);
+    editor.setDecorations = jest.fn();
+    const decorator = new Decorator(new MarkdownParseCache({} as any));
+
+    (decorator as any).activeEditor = editor;
+    (decorator as any).isSelectionOrCursorInsideOffsets = jest.fn().mockReturnValue(false);
+    (decorator as any).mermaidDecorations = {
+      apply: jest.fn(),
+      clear: jest.fn(),
+    };
+
+    await (decorator as any).updateMermaidDiagrams(
+      [
+        {
+          startPos: blockStart,
+          endPos: blockEnd,
+          source: 'graph TD\n  A --> B',
+          numLines: 2,
+        },
+      ],
+      normalizedText,
+      document.version,
+    );
+
+    expect(editor.setDecorations).toHaveBeenCalledWith(
+      expect.anything(),
+      [
+        expect.objectContaining({
+          start: expect.objectContaining({ line: 2, character: 0 }),
+          end: expect.objectContaining({ line: 2, character: 1 }),
+        }),
+      ],
+    );
+  });
+
   it('deduplicates rendering for identical blocks during one update', async () => {
     const blockText2 = blockText;
     const text2 = `${blockText}\n\n${blockText2}\nAfter`;

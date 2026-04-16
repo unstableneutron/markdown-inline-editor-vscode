@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { Decorator } from './decorator';
+import { shouldSkipInDiffView } from './diff-context';
 import { MarkdownLinkProvider } from './link-provider';
 import { MarkdownImageHoverProvider } from './image-hover-provider';
 import { MarkdownLinkHoverProvider } from './link-hover-provider';
@@ -160,6 +161,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
     parseCache,
     mermaidViewerService,
     () => config.mermaid.previewMode(),
+    (document) => !shouldSkipInDiffView(document) && decorator.isEnabledForDocument(document),
   );
   mermaidViewerClickHandler.enable();
 

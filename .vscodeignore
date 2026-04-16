@@ -63,6 +63,9 @@ dist/coverage
 
 # Cursor files
 .cursor/**
+.jj/**
+.pi/**
+scratch/**
 
 # Dev tooling (not needed at runtime)
 Makefile

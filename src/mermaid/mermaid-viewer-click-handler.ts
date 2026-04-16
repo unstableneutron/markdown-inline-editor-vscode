@@ -10,6 +10,7 @@ export class MermaidViewerClickHandler implements vscode.Disposable {
     private readonly parseCache: MarkdownParseCache,
     private readonly mermaidViewerService: MermaidViewerService,
     private readonly getPreviewMode: () => 'hover' | 'interactive-viewer',
+    private readonly isInteractiveViewerAvailableForDocument: (document: vscode.TextDocument) => boolean = () => true,
   ) {}
 
   enable(): void {
@@ -38,6 +39,10 @@ export class MermaidViewerClickHandler implements vscode.Disposable {
     }
 
     const document = event.textEditor.document;
+    if (!this.isInteractiveViewerAvailableForDocument(document)) {
+      return;
+    }
+
     const parseEntry = this.parseCache.get(document);
     const clickOffset = document.offsetAt(event.selections[0].active);
     const block = findMermaidBlockAtIndicatorOffset(

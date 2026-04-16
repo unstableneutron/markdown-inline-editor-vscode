@@ -85,6 +85,32 @@ describe('MermaidViewerClickHandler', () => {
     expect(service.openFromBlock).not.toHaveBeenCalled();
   });
 
+  it('ignores clicks when interactive viewer is unavailable for the document', async () => {
+    const document = new TextDocument(Uri.file('/tmp/test.md'), 'markdown', 1, markdown);
+    const editor = new TextEditor(document, [
+      new Selection(new Position(1, 0), new Position(1, 0)),
+    ]);
+    const parseCache = { get: jest.fn() } as any;
+    const service = { openFromBlock: jest.fn() } as any;
+    const isAvailable = jest.fn().mockReturnValue(false);
+    const handler = new MermaidViewerClickHandler(
+      parseCache,
+      service,
+      () => 'interactive-viewer',
+      isAvailable,
+    );
+
+    await handler.handleSelectionChange({
+      textEditor: editor,
+      selections: [new Selection(new Position(1, 0), new Position(1, 0))],
+      kind: TextEditorSelectionChangeKind.Mouse,
+    } as any);
+
+    expect(isAvailable).toHaveBeenCalledWith(document);
+    expect(parseCache.get).not.toHaveBeenCalled();
+    expect(service.openFromBlock).not.toHaveBeenCalled();
+  });
+
   it('ignores non-markdown editors', async () => {
     const document = new TextDocument(Uri.file('/tmp/test.txt'), 'plaintext', 1, markdown);
     const editor = new TextEditor(document, [
