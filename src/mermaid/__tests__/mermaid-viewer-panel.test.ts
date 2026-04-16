@@ -66,6 +66,49 @@ describe('MermaidViewerPanel', () => {
     );
   });
 
+  it('renders webview html with a nonce-based CSP and SVG sanitization script', () => {
+    const panel = new MermaidViewerPanel();
+
+    panel.open(
+      {
+        title: 'Mermaid Preview',
+        svg: '<svg viewBox="0 0 10 10"></svg>',
+        source: 'graph TD\nA-->B',
+      },
+      ViewColumn.One,
+    );
+
+    const createdPanel = (window.createWebviewPanel as jest.Mock).mock.results[0].value;
+    const html = createdPanel.webview.html as string;
+    const nonceMatch = html.match(/<script nonce="([^"]+)"/);
+
+    expect(nonceMatch?.[1]).toBeTruthy();
+    expect(html).toContain("Content-Security-Policy");
+    expect(html).toContain(`script-src 'nonce-${nonceMatch?.[1]}'`);
+    expect(html).toContain('function sanitizeSvgMarkup(svgMarkup)');
+    expect(html).toContain("['script', 'foreignobject']");
+    expect(html).toContain("attributeName.startsWith('on')");
+    expect(html).toContain("startsWith('javascript:')");
+  });
+
+  it('reveals the existing panel beside when the webview requests open beside', () => {
+    const panel = new MermaidViewerPanel();
+    panel.open({ title: 'One', svg: '<svg></svg>', source: 'graph TD\nA-->B' }, ViewColumn.One);
+
+    const createdPanel = (window.createWebviewPanel as jest.Mock).mock.results[0].value;
+    createdPanel.webview.__fireMessage({ type: 'openBeside' });
+
+    expect(createdPanel.reveal).toHaveBeenLastCalledWith(ViewColumn.Beside);
+    expect(createdPanel.webview.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'render',
+        svg: '<svg></svg>',
+        source: 'graph TD\nA-->B',
+        title: 'One',
+      }),
+    );
+  });
+
   it('disposes the current panel via the public wrapper and allows reuse', () => {
     const panel = new MermaidViewerPanel();
     panel.open({ title: 'One', svg: '<svg></svg>', source: 'graph TD\nA-->B' }, ViewColumn.One);

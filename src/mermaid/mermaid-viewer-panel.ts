@@ -52,7 +52,7 @@ export class MermaidViewerPanel {
       },
     );
 
-    panel.webview.html = this.getHtml();
+    panel.webview.html = this.getHtml(panel.webview);
     this.messageDisposable = panel.webview.onDidReceiveMessage((message) => {
       this.handleWebviewMessage(message);
     });
@@ -91,14 +91,23 @@ export class MermaidViewerPanel {
     this.lastPayload = undefined;
   }
 
-  private getHtml(): string {
+  private getHtml(webview: vscode.Webview): string {
+    const nonce = this.createNonce();
+    const csp = [
+      "default-src 'none'",
+      `img-src ${webview.cspSource} data: https:`,
+      `style-src 'nonce-${nonce}'`,
+      `script-src 'nonce-${nonce}'`,
+    ].join('; ');
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${VIEWER_DEFAULT_TITLE}</title>
-  <style>
+  <style nonce="${nonce}">
     :root {
       color-scheme: light dark;
     }
@@ -211,7 +220,7 @@ export class MermaidViewerPanel {
     <div id="canvas"></div>
   </div>
   <pre id="source"></pre>
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const toolbar = document.getElementById('toolbar');
     const viewport = document.getElementById('viewport');
@@ -219,6 +228,7 @@ export class MermaidViewerPanel {
     const status = document.getElementById('status');
     const titleElement = document.getElementById('title');
     const sourceElement = document.getElementById('source');
+    const SCRIPTABLE_TAG_NAMES = new Set(['script', 'foreignobject']);
 
     let scale = 1;
     let panX = 0;
@@ -249,6 +259,55 @@ export class MermaidViewerPanel {
       const width = Number(svg.getAttribute('width')) || svg.getBoundingClientRect().width || 1;
       const height = Number(svg.getAttribute('height')) || svg.getBoundingClientRect().height || 1;
       return { width, height };
+    }
+
+    function normalizeHref(value) {
+      return value.replace(/[\u0000-\u0020\u007F\s]+/g, '').toLowerCase();
+    }
+
+    function sanitizeSvgMarkup(svgMarkup) {
+      if (typeof svgMarkup !== 'string' || !svgMarkup.trim()) {
+        return undefined;
+      }
+
+      const parser = new DOMParser();
+      const documentRoot = parser.parseFromString(svgMarkup, 'image/svg+xml');
+      const parserError = documentRoot.querySelector('parsererror');
+      if (parserError) {
+        return undefined;
+      }
+
+      const svg = documentRoot.documentElement;
+      if (!svg || svg.tagName.toLowerCase() !== 'svg') {
+        return undefined;
+      }
+
+      const elements = [svg, ...svg.querySelectorAll('*')];
+      for (const element of elements) {
+        const tagName = element.tagName.toLowerCase();
+        if (SCRIPTABLE_TAG_NAMES.has(tagName)) {
+          element.remove();
+          continue;
+        }
+
+        for (const attribute of [...element.attributes]) {
+          const attributeName = attribute.name.toLowerCase();
+          if (attributeName.startsWith('on')) {
+            element.removeAttribute(attribute.name);
+            continue;
+          }
+
+          const normalizedValue = normalizeHref(attribute.value);
+          if (
+            (attributeName === 'href' || attributeName === 'xlink:href') &&
+            normalizedValue.startsWith('javascript:')
+          ) {
+            element.removeAttribute(attribute.name);
+          }
+        }
+      }
+
+      return svg;
     }
 
     function updateTransform() {
@@ -293,7 +352,13 @@ export class MermaidViewerPanel {
       document.title = payload.title || '${VIEWER_DEFAULT_TITLE}';
       titleElement.textContent = payload.title || '${VIEWER_DEFAULT_TITLE}';
       sourceElement.textContent = payload.source || '';
-      canvas.innerHTML = payload.svg || '';
+
+      const sanitizedSvg = sanitizeSvgMarkup(payload.svg || '');
+      canvas.replaceChildren();
+      if (sanitizedSvg) {
+        canvas.appendChild(sanitizedSvg);
+      }
+
       requestAnimationFrame(() => fitToViewport());
     }
 
@@ -393,5 +458,16 @@ export class MermaidViewerPanel {
   </script>
 </body>
 </html>`;
+  }
+
+  private createNonce(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let nonce = '';
+
+    for (let index = 0; index < 32; index += 1) {
+      nonce += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    return nonce;
   }
 }
