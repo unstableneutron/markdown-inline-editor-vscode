@@ -23,11 +23,7 @@ export function getMermaidIndicatorOffsets(
   const blockEnd = mapNormalizedToOriginal(block.endPos, textForMapping);
   const openingFenceLineEnd = textForMapping.indexOf('\n', blockStart);
 
-  if (openingFenceLineEnd === -1) {
-    return undefined;
-  }
-
-  const indicatorStart = openingFenceLineEnd + 1;
+  const indicatorStart = openingFenceLineEnd === -1 ? blockStart : openingFenceLineEnd + 1;
   return {
     blockStart,
     blockEnd,

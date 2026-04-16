@@ -22,6 +22,28 @@ describe('mermaid indicator helpers', () => {
     expect(findMermaidBlockAtIndicatorOffset(blocks, source, source, indicatorOffset)).toEqual(blocks[0]);
   });
 
+  it('falls back to blockStart indicator offsets when the opening fence line has no newline', () => {
+    const malformedSource = '```mermaid';
+    const malformedBlock: MermaidBlock = {
+      startPos: 0,
+      endPos: malformedSource.length,
+      source: '',
+      numLines: 0,
+    };
+
+    const offsets = getMermaidIndicatorOffsets(malformedBlock, malformedSource, malformedSource);
+    expect(offsets).toEqual({
+      blockStart: 0,
+      blockEnd: malformedSource.length,
+      indicatorStart: 0,
+      indicatorEnd: 1,
+    });
+
+    expect(findMermaidBlockAtIndicatorOffset([malformedBlock], malformedSource, malformedSource, 0)).toEqual(
+      malformedBlock,
+    );
+  });
+
   it('maps normalized block offsets into original CRLF coordinates', () => {
     const normalizedText = ['intro', '```mermaid', 'graph TD', '  A --> B', '```'].join('\n');
     const normalizedBlockText = ['```mermaid', 'graph TD', '  A --> B', '```'].join('\n');
