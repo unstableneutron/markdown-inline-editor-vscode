@@ -27,6 +27,15 @@ export class MermaidViewerPanel {
     });
   }
 
+  public dispose(): void {
+    if (this.panel) {
+      this.panel.dispose();
+      return;
+    }
+
+    this.clearPanel();
+  }
+
   private ensurePanel(title: string, column: vscode.ViewColumn): vscode.WebviewPanel {
     if (this.panel) {
       this.panel.reveal(column);

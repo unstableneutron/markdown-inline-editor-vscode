@@ -66,6 +66,24 @@ describe('MermaidViewerPanel', () => {
     );
   });
 
+  it('disposes the current panel via the public wrapper and allows reuse', () => {
+    const panel = new MermaidViewerPanel();
+    panel.open({ title: 'One', svg: '<svg></svg>', source: 'graph TD\nA-->B' }, ViewColumn.One);
+
+    const firstPanel = (window.createWebviewPanel as jest.Mock).mock.results[0].value;
+    const dispose = (panel as MermaidViewerPanel & { dispose?: () => void }).dispose;
+
+    expect(typeof dispose).toBe('function');
+    dispose?.call(panel);
+    expect(firstPanel.dispose).toHaveBeenCalledTimes(1);
+
+    panel.open({ title: 'Two', svg: '<svg></svg>', source: 'graph TD\nB-->C' }, ViewColumn.Two);
+
+    expect(window.createWebviewPanel).toHaveBeenCalledTimes(2);
+    const secondPanel = (window.createWebviewPanel as jest.Mock).mock.results[1].value;
+    expect(secondPanel).not.toBe(firstPanel);
+  });
+
   it('disposes and clears the panel when the webview requests close', () => {
     const panel = new MermaidViewerPanel();
     panel.open({ title: 'One', svg: '<svg></svg>', source: 'graph TD\nA-->B' }, ViewColumn.One);
