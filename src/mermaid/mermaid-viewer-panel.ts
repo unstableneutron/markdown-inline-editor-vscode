@@ -151,7 +151,9 @@ export class MermaidViewerPanel {
     const csp = [
       "default-src 'none'",
       `img-src ${webview.cspSource} data:`,
-      `style-src 'nonce-${nonce}'`,
+      `style-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-inline'`,
+      `style-src-elem ${webview.cspSource} 'nonce-${nonce}' 'unsafe-inline'`,
+      "style-src-attr 'unsafe-inline'",
       `script-src 'nonce-${nonce}'`,
     ].join('; ');
 
@@ -354,7 +356,7 @@ export class MermaidViewerPanel {
       const svgSize = getSvgSize();
       const widthScale = (bounds.width * 0.8) / svgSize.width;
       const heightScale = (bounds.height * 0.8) / svgSize.height;
-      centerAtScale(clampScale(Math.min(widthScale, heightScale, 1)));
+      centerAtScale(clampScale(Math.min(widthScale, heightScale)));
     }
 
     function resetZoom() {

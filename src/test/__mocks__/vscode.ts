@@ -304,16 +304,25 @@ class MockWebviewPanel {
     this.visible = true;
   });
 
-  onDidDispose(listener: () => void): { dispose: () => void } {
-    this.disposeListeners.push(listener);
-    return {
+  onDidDispose(
+    listener: () => void,
+    thisArgs?: unknown,
+    disposables?: Array<{ dispose: () => void }>,
+  ): { dispose: () => void } {
+    const boundListener = thisArgs ? listener.bind(thisArgs) : listener;
+    this.disposeListeners.push(boundListener);
+
+    const disposable = {
       dispose: () => {
-        const index = this.disposeListeners.indexOf(listener);
+        const index = this.disposeListeners.indexOf(boundListener);
         if (index >= 0) {
           this.disposeListeners.splice(index, 1);
         }
       },
     };
+
+    disposables?.push(disposable);
+    return disposable;
   }
 
   dispose = jest.fn(() => {

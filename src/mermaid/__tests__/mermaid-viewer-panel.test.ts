@@ -1,8 +1,17 @@
-import { window, ViewColumn } from '../../test/__mocks__/vscode';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+import { window, workspace, ViewColumn } from '../../test/__mocks__/vscode';
 import {
   MermaidViewerPanel,
   sanitizeMermaidViewerSvg,
 } from '../mermaid-viewer-panel';
+
+const REALISTIC_MERMAID_SVG_FIXTURE_PATH = resolve(
+  process.cwd(),
+  'node_modules/.gitchamber/github.com/1jehuang/mermaid-rs-renderer/docs/comparisons/state_nested_official.svg',
+);
+const REALISTIC_MERMAID_SVG = readFileSync(REALISTIC_MERMAID_SVG_FIXTURE_PATH, 'utf8');
 
 describe('sanitizeMermaidViewerSvg', () => {
   it('removes scriptable elements, event handlers, and non-local links', () => {
@@ -31,11 +40,24 @@ describe('sanitizeMermaidViewerSvg', () => {
     expect(sanitizedSvg).toContain('href="#local-node"');
     expect(sanitizedSvg).toContain('xlink:href="#local-marker"');
   });
+
+  it('retains safe Mermaid style blocks and inline styles from a realistic fixture', () => {
+    const sanitizedSvg = sanitizeMermaidViewerSvg(REALISTIC_MERMAID_SVG);
+
+    expect(sanitizedSvg).toBeDefined();
+    expect(sanitizedSvg).toContain('<style>');
+    expect(sanitizedSvg).toContain('#my-svg');
+    expect(sanitizedSvg).toMatch(/style="[^"]*max-width:[^"]*background-color:[^"]*"/);
+  });
 });
 
 describe('MermaidViewerPanel', () => {
   beforeEach(() => {
     (window.createWebviewPanel as jest.Mock).mockClear();
+    (workspace.openTextDocument as jest.Mock).mockClear();
+    (window.showTextDocument as jest.Mock).mockClear();
+    window.activeTextEditor = undefined;
+    window.visibleTextEditors = [];
   });
 
   it('creates a webview panel in the requested column and posts render payloads', () => {
@@ -141,7 +163,7 @@ describe('MermaidViewerPanel', () => {
     );
   });
 
-  it('renders webview html with a nonce-based CSP and host-side svg sanitization', () => {
+  it('renders webview html with a nonce-based CSP, svg styling support, and host-side svg sanitization', () => {
     const panel = new MermaidViewerPanel();
 
     panel.open(
@@ -160,10 +182,45 @@ describe('MermaidViewerPanel', () => {
     expect(nonceMatch?.[1]).toBeTruthy();
     expect(html).toContain('Content-Security-Policy');
     expect(html).toContain(`script-src 'nonce-${nonceMatch?.[1]}'`);
+    expect(html).toContain(`style-src vscode-test-webview 'nonce-${nonceMatch?.[1]}' 'unsafe-inline'`);
+    expect(html).toContain(`style-src-elem vscode-test-webview 'nonce-${nonceMatch?.[1]}' 'unsafe-inline'`);
+    expect(html).toContain("style-src-attr 'unsafe-inline'");
     expect(html).toContain("img-src vscode-test-webview data:");
     expect(html).not.toContain('https:');
     expect(html).not.toContain('function sanitizeSvgMarkup(svgMarkup)');
     expect(html).toContain('function parseSvgMarkup(svgMarkup)');
+    expect(html).toContain('centerAtScale(clampScale(Math.min(widthScale, heightScale)));');
+    expect(html).not.toContain('Math.min(widthScale, heightScale, 1)');
+  });
+
+  it('supports opening a mock text document and showing it in an editor', async () => {
+    const document = await workspace.openTextDocument({
+      language: 'markdown',
+      content: '# Mermaid fixture',
+    });
+    const editor = await window.showTextDocument(document, { viewColumn: ViewColumn.Two });
+
+    expect(document.getText()).toBe('# Mermaid fixture');
+    expect(editor.document).toBe(document);
+    expect(editor.viewColumn).toBe(ViewColumn.Two);
+    expect(window.activeTextEditor).toBe(editor);
+    expect(window.visibleTextEditors).toContain(editor);
+  });
+
+  it('mirrors the webview panel disposal event signature closely enough for tests', () => {
+    const createdPanel = window.createWebviewPanel('test.panel', 'Test Panel', ViewColumn.One, {});
+    const thisArg = { disposeCount: 0 };
+    const disposables: Array<{ dispose: () => void }> = [];
+
+    const disposable = createdPanel.onDidDispose(function (this: { disposeCount: number }) {
+      this.disposeCount += 1;
+    }, thisArg, disposables);
+
+    expect(disposables).toContain(disposable);
+
+    createdPanel.dispose();
+
+    expect(thisArg.disposeCount).toBe(1);
   });
 
   it('reveals the existing panel beside when the webview requests open beside', () => {
