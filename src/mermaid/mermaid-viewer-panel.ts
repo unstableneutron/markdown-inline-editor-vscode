@@ -162,7 +162,27 @@ export class MermaidViewerPanel {
 
   private getHtml(webview: vscode.Webview): string {
     const nonce = this.createNonce();
-    const csp = [
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="${this.createContentSecurityPolicy(webview, nonce)}" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${VIEWER_DEFAULT_TITLE}</title>
+  <style nonce="${nonce}">${this.getStyles()}
+  </style>
+</head>
+<body>
+${this.getBodyMarkup()}
+  <script nonce="${nonce}">${this.getScript()}
+  </script>
+</body>
+</html>`;
+  }
+
+  private createContentSecurityPolicy(webview: vscode.Webview, nonce: string): string {
+    return [
       "default-src 'none'",
       `img-src ${webview.cspSource} data:`,
       `style-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-inline'`,
@@ -170,15 +190,10 @@ export class MermaidViewerPanel {
       "style-src-attr 'unsafe-inline'",
       `script-src 'nonce-${nonce}'`,
     ].join('; ');
+  }
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="${csp}" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${VIEWER_DEFAULT_TITLE}</title>
-  <style nonce="${nonce}">
+  private getStyles(): string {
+    return `
     :root {
       color-scheme: light dark;
     }
@@ -267,11 +282,11 @@ export class MermaidViewerPanel {
 
     #source {
       display: none;
-    }
-  </style>
-</head>
-<body>
-  <div id="toolbar">
+    }`;
+  }
+
+  private getBodyMarkup(): string {
+    return `  <div id="toolbar">
     <button type="button" data-action="zoom-in" aria-label="Zoom in">+</button>
     <button type="button" data-action="zoom-out" aria-label="Zoom out">-</button>
     <button type="button" data-action="fit">Fit</button>
@@ -283,8 +298,11 @@ export class MermaidViewerPanel {
   <div id="viewport">
     <div id="canvas"></div>
   </div>
-  <pre id="source"></pre>
-  <script nonce="${nonce}">
+  <pre id="source"></pre>`;
+  }
+
+  private getScript(): string {
+    return `
     const vscode = acquireVsCodeApi();
     const toolbar = document.getElementById('toolbar');
     const viewport = document.getElementById('viewport');
@@ -518,10 +536,7 @@ export class MermaidViewerPanel {
       if (message && message.type === 'render') {
         render(message);
       }
-    });
-  </script>
-</body>
-</html>`;
+    });`;
   }
 
   private createNonce(): string {

@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import type { MarkdownParseCache } from '../markdown-parse-cache';
+import { isMarkdownLikeLanguageId } from '../markdown-language-ids';
 import { findMermaidBlockAtIndicatorOffset } from './indicator';
 import type { MermaidViewerService } from './mermaid-viewer-service';
 
 export class MermaidViewerClickHandler implements vscode.Disposable {
-  private disposables: vscode.Disposable[] = [];
+  private selectionDisposable: vscode.Disposable | undefined;
 
   constructor(
     private readonly parseCache: MarkdownParseCache,
@@ -14,11 +15,13 @@ export class MermaidViewerClickHandler implements vscode.Disposable {
   ) {}
 
   enable(): void {
-    const selectionDisposable = vscode.window.onDidChangeTextEditorSelection((event) => {
+    if (this.selectionDisposable) {
+      return;
+    }
+
+    this.selectionDisposable = vscode.window.onDidChangeTextEditorSelection((event) => {
       void this.handleSelectionChange(event);
     });
-
-    this.disposables.push(selectionDisposable);
   }
 
   async handleSelectionChange(event: vscode.TextEditorSelectionChangeEvent): Promise<void> {
@@ -30,7 +33,7 @@ export class MermaidViewerClickHandler implements vscode.Disposable {
       return;
     }
 
-    if (event.textEditor.document.languageId !== 'markdown') {
+    if (!isMarkdownLikeLanguageId(event.textEditor.document.languageId)) {
       return;
     }
 
@@ -60,9 +63,7 @@ export class MermaidViewerClickHandler implements vscode.Disposable {
   }
 
   dispose(): void {
-    for (const disposable of this.disposables) {
-      disposable.dispose();
-    }
-    this.disposables = [];
+    this.selectionDisposable?.dispose();
+    this.selectionDisposable = undefined;
   }
 }

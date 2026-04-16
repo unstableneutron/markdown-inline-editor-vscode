@@ -13,6 +13,7 @@ import { MathDecorations } from './math/math-decorations';
 import { renderMermaidSvg, svgToDataUri, createErrorSvg } from './mermaid/mermaid-renderer';
 import { getMermaidIndicatorOffsets } from './mermaid/indicator';
 import { MermaidHoverIndicatorDecorationType } from './decorations';
+import { isMarkdownLikeLanguageId } from './markdown-language-ids';
 
 /** Workspace state key prefix for per-file decoration toggle persistence. */
 const DECORATION_STATE_KEY_PREFIX = 'mdInline.decorationsEnabled';
@@ -484,12 +485,8 @@ export class Decorator {
     if (!this.activeEditor) {
       return false;
     }
-    // 'skill'         (#58): SKILL.md files assigned languageId 'skill' by the SKILL extension.
-    // 'markdoc'       (#61): Markdoc files assigned languageId 'markdoc' by the Markdoc language server.
-    // 'mdc'           (#61): Nuxt Content .mdc files assigned languageId 'mdc' by vscode-mdc.
-    // 'juliamarkdown' (#61): Julia Markdown files (VS Code built-in identifier).
-    // 'rmarkdown'     (#61): R Markdown files assigned languageId 'rmarkdown' by vscode-R.
-    return ['markdown', 'md', 'mdx', 'skill', 'markdoc', 'mdc', 'juliamarkdown', 'rmarkdown'].includes(this.activeEditor.document.languageId);
+
+    return isMarkdownLikeLanguageId(this.activeEditor.document.languageId);
   }
 
   /**

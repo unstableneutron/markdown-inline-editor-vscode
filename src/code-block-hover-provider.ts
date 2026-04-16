@@ -7,6 +7,8 @@ import { svgToDataUriBase64 } from './mermaid/svg-processor';
 import { getMermaidIndicatorOffsets } from './mermaid/indicator';
 import { config } from './config';
 import { toCommandUri } from './link-targets';
+import { isMarkdownLikeLanguageId } from './markdown-language-ids';
+import { OPEN_MERMAID_VIEWER_BESIDE_COMMAND, OPEN_MERMAID_VIEWER_COMMAND } from './mermaid/commands';
 import * as cheerio from 'cheerio';
 
 /**
@@ -288,7 +290,7 @@ export class CodeBlockHoverProvider implements vscode.HoverProvider {
     position: vscode.Position,
     token: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.Hover> {
-    if (document.languageId !== 'markdown') {
+    if (!isMarkdownLikeLanguageId(document.languageId)) {
       return;
     }
 
@@ -432,11 +434,11 @@ export class CodeBlockHoverProvider implements vscode.HoverProvider {
     const markdown = new vscode.MarkdownString();
     markdown.isTrusted = true;
 
-    const openViewerUri = toCommandUri('markdown-inline-editor.openMermaidViewer', [
+    const openViewerUri = toCommandUri(OPEN_MERMAID_VIEWER_COMMAND, [
       document.uri.toString(),
       blockStartPos,
     ]);
-    const openBesideUri = toCommandUri('markdown-inline-editor.openMermaidViewerBeside', [
+    const openBesideUri = toCommandUri(OPEN_MERMAID_VIEWER_BESIDE_COMMAND, [
       document.uri.toString(),
       blockStartPos,
     ]);

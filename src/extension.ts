@@ -13,7 +13,9 @@ import { MarkdownParseCache } from './markdown-parse-cache';
 import { initMermaidRenderer, disposeMermaidRenderer } from './mermaid/mermaid-renderer';
 import { MermaidViewerService } from './mermaid/mermaid-viewer-service';
 import { MermaidViewerClickHandler } from './mermaid/mermaid-viewer-click-handler';
+import { OPEN_MERMAID_VIEWER_BESIDE_COMMAND, OPEN_MERMAID_VIEWER_COMMAND } from './mermaid/commands';
 import { processSvg } from './mermaid/svg-processor';
+import { MARKDOWN_LIKE_LANGUAGE_IDS } from './markdown-language-ids';
 
 /**
  * Checks if a recommended extension is installed and optionally shows a notification.
@@ -148,7 +150,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Register hover provider for code block previews (Mermaid, LaTeX, etc.)
   const codeBlockHoverProvider = new CodeBlockHoverProvider(parseCache);
   const codeBlockHoverProviderDisposable = vscode.languages.registerHoverProvider(
-    { language: 'markdown', scheme: 'file' },
+    MARKDOWN_LIKE_LANGUAGE_IDS.map((language) => ({ language, scheme: 'file' as const })),
     codeBlockHoverProvider
   );
 
@@ -214,14 +216,14 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   );
 
   const openMermaidViewerCommand = vscode.commands.registerCommand(
-    'markdown-inline-editor.openMermaidViewer',
+    OPEN_MERMAID_VIEWER_COMMAND,
     async (documentUri?: string, blockStartPos?: number | string) => {
       await mermaidViewerService.openFromCommand(documentUri, blockStartPos, false);
     }
   );
 
   const openMermaidViewerBesideCommand = vscode.commands.registerCommand(
-    'markdown-inline-editor.openMermaidViewerBeside',
+    OPEN_MERMAID_VIEWER_BESIDE_COMMAND,
     async (documentUri?: string, blockStartPos?: number | string) => {
       await mermaidViewerService.openFromCommand(documentUri, blockStartPos, true);
     }

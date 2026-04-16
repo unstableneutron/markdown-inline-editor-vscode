@@ -58,11 +58,11 @@ describe('CodeBlockHoverProvider (Mermaid preview modes)', () => {
     };
   }
 
-  it('returns command links instead of embedded image previews in interactive-viewer mode', async () => {
+  it('returns command links for supported non-markdown-like documents in interactive-viewer mode', async () => {
     const text = '```mermaid\ngraph TD\nA-->B\n```';
     const parseCache = createParseCache(text);
     const provider = new CodeBlockHoverProvider(parseCache);
-    const document = new TextDocument(Uri.file('/tmp/test.md'), 'markdown', 1, text);
+    const document = new TextDocument(Uri.file('/tmp/test.mdx'), 'mdx', 1, text);
 
     const hover = await provider.provideHover(
       document as any,

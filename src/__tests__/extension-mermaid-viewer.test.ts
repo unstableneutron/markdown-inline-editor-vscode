@@ -58,6 +58,17 @@ describe('extension Mermaid viewer wiring', () => {
     );
     expect(languages.registerHoverProvider).toHaveBeenCalled();
 
+    const codeBlockHoverSelector = (languages.registerHoverProvider as jest.Mock).mock.calls.find(
+      ([, provider]) => provider?.constructor?.name === 'CodeBlockHoverProvider',
+    )?.[0];
+
+    expect(codeBlockHoverSelector).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ language: 'markdown', scheme: 'file' }),
+        expect.objectContaining({ language: 'mdx', scheme: 'file' }),
+      ]),
+    );
+
     // One listener is the decorator path; the second listener should come from
     // MermaidViewerClickHandler wiring for interactive-viewer indicator clicks.
     expect(selectionChangeSpy).toHaveBeenCalledTimes(2);

@@ -24,10 +24,11 @@ describe('MermaidViewerClickHandler', () => {
     window.visibleTextEditors = [];
   });
 
-  it('registers a selection listener when enabled', () => {
+  it('registers a selection listener only once when enabled repeatedly', () => {
+    const selectionDisposable = { dispose: jest.fn() };
     const selectionListenerSpy = jest
       .spyOn(window, 'onDidChangeTextEditorSelection')
-      .mockImplementation(() => ({ dispose: jest.fn() }) as any);
+      .mockImplementation(() => selectionDisposable as any);
 
     const handler = new MermaidViewerClickHandler(
       { get: jest.fn() } as any,
@@ -36,15 +37,17 @@ describe('MermaidViewerClickHandler', () => {
     );
 
     handler.enable();
+    handler.enable();
 
     expect(selectionListenerSpy).toHaveBeenCalledTimes(1);
 
     handler.dispose();
+    expect(selectionDisposable.dispose).toHaveBeenCalledTimes(1);
     selectionListenerSpy.mockRestore();
   });
 
-  it('opens the viewer only for mouse clicks on the Mermaid indicator in interactive-viewer mode', async () => {
-    const document = new TextDocument(Uri.file('/tmp/test.md'), 'markdown', 1, markdown);
+  it('opens the viewer for supported markdown-like languages in interactive-viewer mode', async () => {
+    const document = new TextDocument(Uri.file('/tmp/test.mdx'), 'mdx', 1, markdown);
     const editor = new TextEditor(document, [
       new Selection(new Position(1, 0), new Position(1, 0)),
     ]);
