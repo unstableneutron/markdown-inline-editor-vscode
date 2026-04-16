@@ -298,6 +298,18 @@ export class MermaidViewerPanel {
       ':host {',
       '  display: block;',
       '}',
+      '[part="svg-host"] {',
+      '  display: block;',
+      '}',
+    ].join('\n');
+    const svgHost = document.createElement('div');
+    svgHost.setAttribute('part', 'svg-host');
+    const svgRoot = svgHost.attachShadow({ mode: 'open' });
+    const svgRootStyles = document.createElement('style');
+    svgRootStyles.textContent = [
+      '#svg-surface {',
+      '  display: block;',
+      '}',
       'svg {',
       '  display: block;',
       '  overflow: visible;',
@@ -306,8 +318,10 @@ export class MermaidViewerPanel {
       '}',
     ].join('\n');
     const renderSurface = document.createElement('div');
+    renderSurface.id = 'svg-surface';
     renderSurface.setAttribute('part', 'svg-root');
-    renderRoot.append(renderStyles, renderSurface);
+    renderRoot.append(renderStyles, svgHost);
+    svgRoot.append(svgRootStyles, renderSurface);
 
     let scale = 1;
     let panX = 0;

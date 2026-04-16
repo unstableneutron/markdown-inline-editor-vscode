@@ -226,13 +226,13 @@ describe('MermaidViewerPanel', () => {
     expect(html).not.toContain('Math.min(widthScale, heightScale, 1)');
   });
 
-  it('isolates rendered svg markup inside a shadow-rooted render surface', () => {
+  it('isolates rendered svg markup inside a nested shadow-rooted render surface', () => {
     const panel = new MermaidViewerPanel();
 
     panel.open(
       {
         title: 'Mermaid Preview',
-        svg: '<svg viewBox="0 0 10 10"><style>body{display:none}#toolbar{display:none}</style></svg>',
+        svg: '<svg viewBox="0 0 10 10"><style>:host{display:none}#toolbar{display:none}</style></svg>',
         source: 'graph TD\nA-->B',
       },
       ViewColumn.One,
@@ -242,14 +242,21 @@ describe('MermaidViewerPanel', () => {
     const html = createdPanel.webview.html as string;
 
     expect(html).toContain("const renderRoot = canvas.attachShadow({ mode: 'open' });");
+    expect(html).toContain("const svgHost = document.createElement('div');");
+    expect(html).toContain("svgHost.setAttribute('part', 'svg-host');");
+    expect(html).toContain("const svgRoot = svgHost.attachShadow({ mode: 'open' });");
+    expect(html).toContain("const svgRootStyles = document.createElement('style');");
     expect(html).toContain("const renderSurface = document.createElement('div');");
+    expect(html).toContain("renderSurface.id = 'svg-surface';");
     expect(html).toContain("renderSurface.setAttribute('part', 'svg-root');");
-    expect(html).toContain('renderRoot.append(renderStyles, renderSurface);');
+    expect(html).toContain('renderRoot.append(renderStyles, svgHost);');
+    expect(html).toContain('svgRoot.append(svgRootStyles, renderSurface);');
     expect(html).toContain('return renderSurface.querySelector(\'svg\');');
     expect(html).toContain('renderSurface.replaceChildren();');
     expect(html).toContain('renderSurface.appendChild(svg);');
-    expect(html).toContain(':host {');
-    expect(html).not.toContain('#canvas svg {');
+    expect(html).toContain('#svg-surface {');
+    expect(html).toContain('svg {');
+    expect(html).not.toContain('renderRoot.append(renderStyles, renderSurface);');
   });
 
   it('supports opening a mock text document and showing it in an editor', async () => {
