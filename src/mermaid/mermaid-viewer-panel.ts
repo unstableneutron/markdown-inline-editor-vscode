@@ -186,7 +186,7 @@ ${this.getBodyMarkup()}
       "default-src 'none'",
       `img-src ${webview.cspSource} data:`,
       `style-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-inline'`,
-      `style-src-elem ${webview.cspSource} 'nonce-${nonce}' 'unsafe-inline'`,
+      `style-src-elem ${webview.cspSource} 'unsafe-inline'`,
       "style-src-attr 'unsafe-inline'",
       `script-src 'nonce-${nonce}'`,
     ].join('; ');
@@ -319,7 +319,7 @@ ${this.getBodyMarkup()}
       '[part="svg-host"] {',
       '  display: block;',
       '}',
-    ].join('\n');
+    ].join('\\n');
     const svgHost = document.createElement('div');
     svgHost.setAttribute('part', 'svg-host');
     const svgRoot = svgHost.attachShadow({ mode: 'open' });
@@ -334,7 +334,7 @@ ${this.getBodyMarkup()}
       '  max-width: none;',
       '  height: auto;',
       '}',
-    ].join('\n');
+    ].join('\\n');
     const renderSurface = document.createElement('div');
     renderSurface.id = 'svg-surface';
     renderSurface.setAttribute('part', 'svg-root');

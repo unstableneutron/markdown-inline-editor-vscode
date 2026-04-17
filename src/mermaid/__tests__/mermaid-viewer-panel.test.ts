@@ -216,7 +216,8 @@ describe('MermaidViewerPanel', () => {
     expect(html).toContain('Content-Security-Policy');
     expect(html).toContain(`script-src 'nonce-${nonceMatch?.[1]}'`);
     expect(html).toContain(`style-src vscode-test-webview 'nonce-${nonceMatch?.[1]}' 'unsafe-inline'`);
-    expect(html).toContain(`style-src-elem vscode-test-webview 'nonce-${nonceMatch?.[1]}' 'unsafe-inline'`);
+    expect(html).toContain("style-src-elem vscode-test-webview 'unsafe-inline'");
+    expect(html).not.toContain(`style-src-elem vscode-test-webview 'nonce-${nonceMatch?.[1]}' 'unsafe-inline'`);
     expect(html).toContain("style-src-attr 'unsafe-inline'");
     expect(html).toContain("img-src vscode-test-webview data:");
     expect(html).not.toContain('https:');
@@ -224,6 +225,26 @@ describe('MermaidViewerPanel', () => {
     expect(html).toContain('function parseSvgMarkup(svgMarkup)');
     expect(html).toContain('centerAtScale(clampScale(Math.min(widthScale, heightScale)));');
     expect(html).not.toContain('Math.min(widthScale, heightScale, 1)');
+  });
+
+  it('emits a syntactically valid viewer script', () => {
+    const panel = new MermaidViewerPanel();
+
+    panel.open(
+      {
+        title: 'Mermaid Preview',
+        svg: '<svg viewBox="0 0 10 10"></svg>',
+        source: 'graph TD\nA-->B',
+      },
+      ViewColumn.One,
+    );
+
+    const createdPanel = (window.createWebviewPanel as jest.Mock).mock.results[0].value;
+    const html = createdPanel.webview.html as string;
+    const scriptMatch = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/);
+
+    expect(scriptMatch?.[1]).toBeTruthy();
+    expect(() => new Function(scriptMatch?.[1] ?? '')).not.toThrow();
   });
 
   it('isolates rendered svg markup inside a nested shadow-rooted render surface', () => {
