@@ -7,14 +7,20 @@ jest.mock('../../math/math-renderer', () => ({
   renderMathToDataUri: jest.fn((source: string) => `data:image/svg+xml,${source}`),
 }));
 
+jest.mock('../../vim-mode', () => ({
+  resolveEditorInteractionMode: jest.fn().mockResolvedValue('interactiveEdit'),
+}));
+
 import { Decorator } from '../../decorator';
 import { config } from '../../config';
-import { TextDocument, TextEditor, Selection, Position, Uri } from '../../test/__mocks__/vscode';
+import { TextDocument, TextEditor, Selection, Position, TextEditorSelectionChangeKind, Uri } from '../../test/__mocks__/vscode';
+import { resolveEditorInteractionMode } from '../../vim-mode';
 
 const text = 'Before $E = mc^2$ after';
 const mathRegions = [
   { startPos: 7, endPos: 16, source: 'E = mc^2', displayMode: false },
 ];
+const mockResolveEditorInteractionMode = resolveEditorInteractionMode as jest.MockedFunction<typeof resolveEditorInteractionMode>;
 
 function createDecoratorWithMathCache(customText?: string, customMathRegions?: typeof mathRegions): Decorator & {
   parseCache: { get: (doc: ReturnType<typeof TextDocument>) => unknown };
@@ -45,6 +51,8 @@ function createDecoratorWithMathCache(customText?: string, customMathRegions?: t
 describe('Decorator - Math reveal on select', () => {
   afterEach(() => {
     jest.restoreAllMocks();
+    mockResolveEditorInteractionMode.mockReset();
+    mockResolveEditorInteractionMode.mockResolvedValue('interactiveEdit');
   });
 
   it('applies math decoration when cursor is outside math region', async () => {
@@ -110,6 +118,26 @@ describe('Decorator - Math reveal on select', () => {
     const regionsWithRanges = lastCall[1];
     expect(regionsWithRanges).toHaveLength(1);
     expect(regionsWithRanges[0].range).toBeNull();
+  });
+
+  it('keeps fenced math rendered in viewOnly mode when cursor is inside fence body', () => {
+    const fencedText = ['```math', '\\frac{1}{2}', '```'].join('\n');
+    const fencedRegion = [
+      { startPos: 0, endPos: fencedText.length, source: '\\frac{1}{2}\n', displayMode: true, numLines: 1 },
+    ];
+    const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, fencedText);
+    const cursorInside = new Position(1, 2);
+    const editor = new TextEditor(document, [new Selection(cursorInside, cursorInside)]);
+    const decorator = createDecoratorWithMathCache(fencedText, fencedRegion);
+    decorator.setActiveEditor(editor);
+
+    (decorator as any).applyMathDecorations(fencedRegion, fencedText, 'viewOnly');
+
+    expect(decorator.mathDecorations.apply).toHaveBeenCalled();
+    const lastCall = (decorator.mathDecorations.apply as jest.Mock).mock.calls.slice(-1)[0];
+    const regionsWithRanges = lastCall[1];
+    expect(regionsWithRanges).toHaveLength(1);
+    expect(regionsWithRanges[0].range).not.toBeNull();
   });
 
   it('passes fenced math range for rendering when cursor is outside', async () => {
@@ -199,5 +227,98 @@ describe('Decorator - Math reveal on select', () => {
     expect(regionsWithRanges).toHaveLength(2);
     expect(regionsWithRanges[0].range).not.toBeNull();
     expect(regionsWithRanges[1].range).not.toBeNull();
+  });
+
+  it('parks the cursor outside block math in viewOnly mode and restores it in interactiveEdit', async () => {
+    const fencedText = ['before', '```math', '\\frac{1}{2}', '```', 'after'].join('\n');
+    const fenceStart = fencedText.indexOf('```math');
+    const fencedRegion = [
+      { startPos: fenceStart, endPos: fencedText.indexOf('after') - 1, source: '\\frac{1}{2}\n', displayMode: true, numLines: 1 },
+    ];
+    const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, fencedText);
+    const outside = new Position(0, 1);
+    const inside = new Position(2, 2);
+    const editor = new TextEditor(document, [new Selection(outside, outside)]);
+    const decorator = createDecoratorWithMathCache(fencedText, fencedRegion);
+    (decorator as any).activeEditor = editor;
+
+    mockResolveEditorInteractionMode
+      .mockResolvedValueOnce('viewOnly')
+      .mockResolvedValueOnce('viewOnly')
+      .mockResolvedValueOnce('interactiveEdit');
+
+    await (decorator as any).updateDecorationsInternal();
+
+    editor.selections = [new Selection(inside, inside)];
+    editor.selection = editor.selections[0];
+
+    await (decorator as any).updateDecorationsInternal();
+
+    expect(editor.selection.active).toEqual(outside);
+
+    await (decorator as any).updateDecorationsInternal();
+
+    expect(editor.selection.active).toEqual(inside);
+  });
+
+  it('skips downward past block math on vertical viewOnly navigation', async () => {
+    const fencedText = ['before', '```math', '\\frac{1}{2}', '```', 'after'].join('\n');
+    const fenceStart = fencedText.indexOf('```math');
+    const fencedRegion = [
+      { startPos: fenceStart, endPos: fencedText.indexOf('after') - 1, source: '\\frac{1}{2}\n', displayMode: true, numLines: 1 },
+    ];
+    const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, fencedText);
+    const before = new Position(0, 0);
+    const inside = new Position(2, 2);
+    const after = new Position(4, 0);
+    const editor = new TextEditor(document, [new Selection(before, before)]);
+    const decorator = createDecoratorWithMathCache(fencedText, fencedRegion);
+    (decorator as any).activeEditor = editor;
+
+    mockResolveEditorInteractionMode
+      .mockResolvedValueOnce('viewOnly')
+      .mockResolvedValueOnce('viewOnly');
+
+    await (decorator as any).updateDecorationsInternal();
+
+    editor.selections = [new Selection(inside, inside)];
+    editor.selection = editor.selections[0];
+    (decorator as any).pendingSelectionChangeKind = TextEditorSelectionChangeKind.Keyboard;
+
+    await (decorator as any).updateDecorationsInternal();
+
+    expect(editor.selection.active).toEqual(after);
+  });
+
+  it('parks on normal-mode entry from inside block math then skips out on the next vertical move', async () => {
+    const fencedText = ['before', '```math', '\\frac{1}{2}', '```', 'after'].join('\n');
+    const fenceStart = fencedText.indexOf('```math');
+    const fencedRegion = [
+      { startPos: fenceStart, endPos: fencedText.indexOf('after') - 1, source: '\\frac{1}{2}\n', displayMode: true, numLines: 1 },
+    ];
+    const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, fencedText);
+    const inside = new Position(2, 2);
+    const after = new Position(4, 0);
+    const editor = new TextEditor(document, [new Selection(inside, inside)]);
+    const decorator = createDecoratorWithMathCache(fencedText, fencedRegion);
+    (decorator as any).activeEditor = editor;
+
+    mockResolveEditorInteractionMode
+      .mockResolvedValueOnce('interactiveEdit')
+      .mockResolvedValueOnce('viewOnly')
+      .mockResolvedValueOnce('viewOnly');
+
+    await (decorator as any).updateDecorationsInternal();
+    await (decorator as any).updateDecorationsInternal();
+
+    expect(editor.selection.active.line).toBeLessThan(inside.line);
+
+    editor.selections = [new Selection(inside, inside)];
+    editor.selection = editor.selections[0];
+    (decorator as any).pendingSelectionChangeKind = TextEditorSelectionChangeKind.Keyboard;
+
+    await (decorator as any).updateDecorationsInternal();
+
+    expect(editor.selection.active).toEqual(after);
   });
 });
