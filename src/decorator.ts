@@ -1,4 +1,4 @@
-import { Range, TextEditor, TextDocument, TextDocumentChangeEvent, window, TextEditorSelectionChangeKind, ColorThemeKind, workspace, DecorationOptions, Memento } from 'vscode';
+import { Range, TextEditor, TextDocument, TextDocumentChangeEvent, window, TextEditorSelectionChangeKind, ColorThemeKind, workspace, DecorationOptions, Memento, Selection, Position } from 'vscode';
 import { createHash } from 'crypto';
 import { DecorationRange, DecorationType, MermaidBlock, MathRegion, ScopeRange } from './parser';
 import { mapNormalizedToOriginal } from './position-mapping';
@@ -10,10 +10,12 @@ import { filterDecorationsForEditor, ScopeEntry } from './decorator/visibility-m
 import { handleCheckboxClick } from './decorator/checkbox-toggle';
 import { MermaidDiagramDecorations } from './decorator/mermaid-diagram-decorations';
 import { MathDecorations } from './math/math-decorations';
-import { renderMermaidSvg, svgToDataUri, createErrorSvg } from './mermaid/mermaid-renderer';
+import { createErrorSvg, getMermaidRendererFingerprint, renderMermaidSvg, svgToDataUri } from './mermaid/mermaid-renderer';
 import { getMermaidIndicatorOffsets } from './mermaid/indicator';
 import { MermaidHoverIndicatorDecorationType } from './decorations';
 import { isMarkdownLikeLanguageId } from './markdown-language-ids';
+import { resolveEditorInteractionMode } from './vim-mode';
+import type { EditorInteractionMode } from './vim-mode';
 
 /** Workspace state key prefix for per-file decoration toggle persistence. */
 const DECORATION_STATE_KEY_PREFIX = 'mdInline.decorationsEnabled';
@@ -34,7 +36,19 @@ type MermaidBlockKeyCacheEntry = {
   theme: 'default' | 'dark';
   fontFamily?: string;
   numLines: number;
+  rendererFingerprint: string;
   key: string;
+};
+
+type ViewOnlySelectionState = {
+  deferred?: Selection[];
+  parked?: Selection[];
+  lastVisible?: Selection[];
+};
+
+type ViewOnlyRenderedRegion = {
+  startPos: number;
+  endPos: number;
 };
 
 // Cache hash computation results per block object (cleared automatically on GC / parse cache eviction).
@@ -45,19 +59,21 @@ function getMermaidBlockCacheKey(
   theme: 'default' | 'dark',
   fontFamily?: string
 ): string {
+  const rendererFingerprint = getMermaidRendererFingerprint();
   const cached = mermaidBlockKeyCache.get(block);
   if (
     cached &&
     cached.theme === theme &&
     cached.fontFamily === fontFamily &&
-    cached.numLines === block.numLines
+    cached.numLines === block.numLines &&
+    cached.rendererFingerprint === rendererFingerprint
   ) {
     return cached.key;
   }
 
-  const keySource = `${block.source}\n${theme}\n${fontFamily ?? ''}\n${block.numLines}`;
+  const keySource = `${block.source}\n${theme}\n${fontFamily ?? ''}\n${block.numLines}\n${rendererFingerprint}`;
   const key = createHash('sha256').update(keySource).digest('hex');
-  mermaidBlockKeyCache.set(block, { theme, fontFamily, numLines: block.numLines, key });
+  mermaidBlockKeyCache.set(block, { theme, fontFamily, numLines: block.numLines, rendererFingerprint, key });
   return key;
 }
 
@@ -112,6 +128,7 @@ export class Decorator {
 
   private parseCache: MarkdownParseCache;
   private updateTimeout: NodeJS.Timeout | undefined;
+  private pendingSelectionChangeKind: TextEditorSelectionChangeKind | undefined;
 
   /** Pending update batching: track last document version that triggered an update */
   private pendingUpdateVersion = new Map<string, number>();
@@ -131,6 +148,7 @@ export class Decorator {
   private decorationTypes: DecorationTypeRegistry;
   private mermaidDecorations = new MermaidDiagramDecorations();
   private mathDecorations = new MathDecorations();
+  private viewOnlySelectionState = new Map<string, ViewOnlySelectionState>();
   private mermaidUpdateToken = 0;
   private mermaidHoverIndicatorDecorationType = MermaidHoverIndicatorDecorationType();
 
@@ -212,8 +230,10 @@ export class Decorator {
       return;
     }
 
+    this.pendingSelectionChangeKind = kind;
+
     // Immediate update without debounce for selection changes
-    this.updateDecorationsInternal();
+    void this.updateDecorationsInternal();
   }
 
   // Checkbox behavior lives in decorator/checkbox-toggle.ts
@@ -278,7 +298,7 @@ export class Decorator {
       // This will use requestIdleCallback in browser or setTimeout in Node.js
       this.idleCallbackHandle = this.requestIdleCallback(() => {
         this.idleCallbackHandle = undefined;
-        this.updateDecorationsInternal();
+        void this.updateDecorationsInternal();
         this.pendingUpdateVersion.delete(cacheKey);
       }, { timeout: PERFORMANCE_CONSTANTS.IDLE_CALLBACK_TIMEOUT_MS });
     }, PERFORMANCE_CONSTANTS.DEBOUNCE_TIMEOUT_MS);
@@ -405,7 +425,7 @@ export class Decorator {
    * Internal method that performs the actual decoration update.
    * This orchestrates parsing, filtering, and application.
    */
-  private updateDecorationsInternal() {
+  private async updateDecorationsInternal(): Promise<void> {
     if (!this.activeEditor) {
       return;
     }
@@ -437,28 +457,46 @@ export class Decorator {
       return; // Document changed during parse, skip this update
     }
 
+    const interactionMode = await resolveEditorInteractionMode(
+      config.vim.enableInsertModeEditBehavior()
+    );
+    const selectionChangeKind = this.pendingSelectionChangeKind;
+    this.pendingSelectionChangeKind = undefined;
+
+    // Re-validate editor identity and version after async mode resolution.
+    if (!this.activeEditor || this.activeEditor.document !== document || document.version !== version) {
+      return;
+    }
+
+    this.syncViewOnlyRenderedBlockSelections(interactionMode, mermaidBlocks, mathRegions, text, selectionChangeKind);
+
     // Filter decorations based on selections (pass original text for offset adjustment)
-    const filtered = this.filterDecorations(decorations, scopes, text);
+    const filtered = this.filterDecorations(decorations, scopes, text, interactionMode);
 
     // Apply decorations
     this.applyDecorations(filtered);
     if (config.math.enabled() && mathRegions.length > 0) {
-      this.applyMathDecorations(mathRegions, text);
+      this.applyMathDecorations(mathRegions, text, interactionMode);
     } else {
       if (this.activeEditor) {
         this.mathDecorations.clear(this.activeEditor);
       }
     }
-    void this.updateMermaidDiagrams(mermaidBlocks, text, document.version);
+    void this.updateMermaidDiagrams(mermaidBlocks, text, document.version, interactionMode);
   }
 
   /**
    * Applies math decorations for inline and block regions using normalized positions.
    * When selection or cursor intersects a math region, that region is shown raw (range passed as null).
    */
-  private applyMathDecorations(mathRegions: MathRegion[], normalizedText: string): void {
+  private applyMathDecorations(
+    mathRegions: MathRegion[],
+    normalizedText: string,
+    interactionMode: EditorInteractionMode = 'interactiveEdit'
+  ): void {
     if (!this.activeEditor) return;
     const editor = this.activeEditor;
+    const hasExpandedSelection = editor.selections.some((selection) => !selection.isEmpty);
     const regionsWithRanges = mathRegions.map((region) => {
       const inside = this.isSelectionOrCursorInsideOffsets(
         region.startPos,
@@ -467,9 +505,14 @@ export class Decorator {
         editor.selections,
         editor.document
       );
+      const shouldRevealRaw = inside && (
+        interactionMode === 'interactiveEdit' ||
+        hasExpandedSelection ||
+        !region.displayMode
+      );
       return {
         region,
-        range: inside ? null : this.createRange(region.startPos, region.endPos, normalizedText),
+        range: shouldRevealRaw ? null : this.createRange(region.startPos, region.endPos, normalizedText),
       };
     });
     this.mathDecorations.apply(editor, regionsWithRanges);
@@ -541,10 +584,303 @@ export class Decorator {
     };
   }
 
+  private syncViewOnlyRenderedBlockSelections(
+    interactionMode: EditorInteractionMode,
+    mermaidBlocks: MermaidBlock[],
+    mathRegions: MathRegion[],
+    normalizedText: string,
+    selectionChangeKind?: TextEditorSelectionChangeKind,
+  ): void {
+    if (!this.activeEditor) {
+      return;
+    }
+
+    const editor = this.activeEditor;
+    const stateKey = editor.document.uri.toString();
+    const state = this.viewOnlySelectionState.get(stateKey) ?? {};
+
+    if (interactionMode === 'interactiveEdit') {
+      if (state.deferred && state.deferred.length > 0) {
+        const deferredSelections = this.cloneSelections(state.deferred);
+        this.viewOnlySelectionState.set(stateKey, {
+          lastVisible: this.cloneSelections(deferredSelections),
+        });
+        this.setEditorSelections(editor, deferredSelections);
+        return;
+      }
+
+      this.viewOnlySelectionState.set(stateKey, {
+        lastVisible: this.cloneSelections(editor.selections),
+      });
+      return;
+    }
+
+    if (editor.selections.some((selection) => !selection.isEmpty)) {
+      this.viewOnlySelectionState.set(stateKey, {
+        lastVisible: this.cloneSelections(editor.selections),
+      });
+      return;
+    }
+
+    if (editor.selections.length !== 1) {
+      this.viewOnlySelectionState.set(stateKey, {
+        lastVisible: this.cloneSelections(editor.selections),
+      });
+      return;
+    }
+
+    const currentSelections = this.cloneSelections(editor.selections);
+    const verticalMovementDirection = this.getVerticalMovementDirection(
+      currentSelections,
+      state.lastVisible,
+      selectionChangeKind,
+    );
+    const renderedRegionHit = this.findViewOnlyRenderedRegionHit(
+      currentSelections,
+      mermaidBlocks,
+      mathRegions,
+      normalizedText,
+      editor.document,
+    );
+
+    if (!renderedRegionHit) {
+      if (state.deferred && state.parked && this.areSelectionsEqual(currentSelections, state.parked)) {
+        this.viewOnlySelectionState.set(stateKey, {
+          ...state,
+          lastVisible: this.cloneSelections(currentSelections),
+        });
+        return;
+      }
+
+      this.viewOnlySelectionState.set(stateKey, {
+        ...(verticalMovementDirection === 0 && state.deferred
+          ? { deferred: this.cloneSelections(state.deferred) }
+          : {}),
+        lastVisible: this.cloneSelections(currentSelections),
+      });
+      return;
+    }
+
+    if (verticalMovementDirection !== 0) {
+      const skippedSelections = this.createSkippedSelections(
+        currentSelections,
+        renderedRegionHit,
+        verticalMovementDirection,
+        normalizedText,
+        editor.document,
+      );
+      this.viewOnlySelectionState.set(stateKey, {
+        lastVisible: this.cloneSelections(skippedSelections),
+      });
+      this.setEditorSelections(editor, skippedSelections);
+      return;
+    }
+
+    const lastVisibleStillOutside = state.lastVisible &&
+      state.lastVisible.length === currentSelections.length &&
+      !this.findViewOnlyRenderedRegionHit(
+        state.lastVisible,
+        mermaidBlocks,
+        mathRegions,
+        normalizedText,
+        editor.document,
+      );
+
+    const parkedSelections = lastVisibleStillOutside
+      ? this.cloneSelections(state.lastVisible!)
+      : this.createFallbackParkedSelections(
+          currentSelections,
+          mermaidBlocks,
+          mathRegions,
+          normalizedText,
+          editor.document,
+        );
+
+    this.viewOnlySelectionState.set(stateKey, {
+      deferred: this.cloneSelections(currentSelections),
+      parked: this.cloneSelections(parkedSelections),
+      lastVisible: this.cloneSelections(parkedSelections),
+    });
+    this.setEditorSelections(editor, parkedSelections);
+  }
+
+  private findViewOnlyRenderedRegionHit(
+    selections: readonly Selection[],
+    mermaidBlocks: MermaidBlock[],
+    mathRegions: MathRegion[],
+    normalizedText: string,
+    document: TextDocument,
+  ): ViewOnlyRenderedRegion | undefined {
+    const renderedRegions: ViewOnlyRenderedRegion[] = [
+      ...mermaidBlocks.map((block) => ({ startPos: block.startPos, endPos: block.endPos })),
+      ...mathRegions
+        .filter((region) => region.displayMode)
+        .map((region) => ({ startPos: region.startPos, endPos: region.endPos })),
+    ];
+
+    let smallestMatch: ViewOnlyRenderedRegion | undefined;
+    for (const selection of selections) {
+      if (!selection.isEmpty) {
+        continue;
+      }
+
+      const cursorOffset = document.offsetAt(selection.active);
+      for (const region of renderedRegions) {
+        const mappedStart = mapNormalizedToOriginal(region.startPos, normalizedText);
+        const mappedEnd = mapNormalizedToOriginal(region.endPos, normalizedText);
+        if (cursorOffset < mappedStart || cursorOffset > mappedEnd) {
+          continue;
+        }
+
+        if (!smallestMatch || (region.endPos - region.startPos) < (smallestMatch.endPos - smallestMatch.startPos)) {
+          smallestMatch = region;
+        }
+      }
+    }
+
+    return smallestMatch;
+  }
+
+  private createFallbackParkedSelections(
+    selections: readonly Selection[],
+    mermaidBlocks: MermaidBlock[],
+    mathRegions: MathRegion[],
+    normalizedText: string,
+    document: TextDocument,
+  ): Selection[] {
+    return selections.map((selection) => {
+      if (!selection.isEmpty) {
+        return new Selection(selection.anchor, selection.active);
+      }
+
+      const matchingRegion = this.findViewOnlyRenderedRegionHit(
+        [selection],
+        mermaidBlocks,
+        mathRegions,
+        normalizedText,
+        document,
+      );
+
+      if (!matchingRegion) {
+        return new Selection(selection.anchor, selection.active);
+      }
+
+      const documentLength = document.getText().length;
+      const mappedStart = mapNormalizedToOriginal(matchingRegion.startPos, normalizedText);
+      const mappedEnd = mapNormalizedToOriginal(matchingRegion.endPos, normalizedText);
+      const fallbackOffset = mappedStart > 0
+        ? mappedStart - 1
+        : mappedEnd < documentLength
+          ? mappedEnd + 1
+          : 0;
+      const fallbackPosition = document.positionAt(fallbackOffset);
+      return new Selection(fallbackPosition, fallbackPosition);
+    });
+  }
+
+  private createSkippedSelections(
+    selections: readonly Selection[],
+    matchingRegion: ViewOnlyRenderedRegion,
+    direction: -1 | 1,
+    normalizedText: string,
+    document: TextDocument,
+  ): Selection[] {
+    const targetPosition = this.getSkippedSelectionPosition(
+      matchingRegion,
+      direction,
+      normalizedText,
+      document,
+    );
+    return selections.map(() => new Selection(targetPosition, targetPosition));
+  }
+
+  private getSkippedSelectionPosition(
+    matchingRegion: ViewOnlyRenderedRegion,
+    direction: -1 | 1,
+    normalizedText: string,
+    document: TextDocument,
+  ): Position {
+    const documentText = document.getText();
+
+    if (direction > 0) {
+      let targetOffset = mapNormalizedToOriginal(matchingRegion.endPos, normalizedText);
+      if (targetOffset < documentText.length) {
+        if (documentText[targetOffset] === '\r' && documentText[targetOffset + 1] === '\n') {
+          targetOffset += 2;
+        } else if (documentText[targetOffset] === '\n' || documentText[targetOffset] === '\r') {
+          targetOffset += 1;
+        }
+      }
+      return new Position(document.positionAt(targetOffset).line, 0);
+    }
+
+    const startPosition = document.positionAt(mapNormalizedToOriginal(matchingRegion.startPos, normalizedText));
+    if (startPosition.line === 0) {
+      return new Position(0, 0);
+    }
+
+    return new Position(startPosition.line - 1, 0);
+  }
+
+  private getVerticalMovementDirection(
+    currentSelections: readonly Selection[],
+    previousSelections: readonly Selection[] | undefined,
+    selectionChangeKind?: TextEditorSelectionChangeKind,
+  ): -1 | 0 | 1 {
+    if (
+      selectionChangeKind !== TextEditorSelectionChangeKind.Keyboard &&
+      selectionChangeKind !== TextEditorSelectionChangeKind.Command
+    ) {
+      return 0;
+    }
+
+    if (!previousSelections || previousSelections.length !== 1 || currentSelections.length !== 1) {
+      return 0;
+    }
+
+    const previousLine = previousSelections[0].active.line;
+    const currentLine = currentSelections[0].active.line;
+    if (currentLine > previousLine) {
+      return 1;
+    }
+    if (currentLine < previousLine) {
+      return -1;
+    }
+    return 0;
+  }
+
+  private cloneSelections(selections: readonly Selection[]): Selection[] {
+    return selections.map((selection) => new Selection(selection.anchor, selection.active));
+  }
+
+  private setEditorSelections(editor: TextEditor, selections: readonly Selection[]): void {
+    const clonedSelections = this.cloneSelections(selections);
+    editor.selections = clonedSelections;
+    editor.selection = clonedSelections[0];
+  }
+
+  private areSelectionsEqual(
+    left: readonly Selection[] | undefined,
+    right: readonly Selection[] | undefined,
+  ): boolean {
+    if (!left || !right || left.length !== right.length) {
+      return false;
+    }
+
+    return left.every((selection, index) => {
+      const other = right[index];
+      return selection.anchor.line === other.anchor.line &&
+        selection.anchor.character === other.anchor.character &&
+        selection.active.line === other.active.line &&
+        selection.active.character === other.active.character;
+    });
+  }
+
   private async updateMermaidDiagrams(
     mermaidBlocks: MermaidBlock[],
     text: string,
-    documentVersion: number
+    documentVersion: number,
+    interactionMode: EditorInteractionMode = 'interactiveEdit'
   ): Promise<void> {
     if (!this.activeEditor) {
       return;
@@ -569,6 +905,7 @@ export class Decorator {
     const indicatorRanges: Range[] = [];
 
     const originalText = editor.document.getText();
+    const hasExpandedSelection = editor.selections.some((selection) => !selection.isEmpty);
 
     // Deduplicate renders for identical keys during this update (parallel-safe).
     const dataUriPromisesByKey = new Map<string, Promise<string>>();
@@ -582,7 +919,14 @@ export class Decorator {
           return null;
         }
 
-        if (this.isSelectionOrCursorInsideOffsets(block.startPos, block.endPos, text, editor.selections, editor.document)) {
+        const inside = this.isSelectionOrCursorInsideOffsets(
+          block.startPos,
+          block.endPos,
+          text,
+          editor.selections,
+          editor.document
+        );
+        if (inside && (interactionMode === 'interactiveEdit' || hasExpandedSelection)) {
           return null;
         }
 
@@ -723,7 +1067,8 @@ export class Decorator {
   private filterDecorations(
     decorations: DecorationRange[],
     scopes: ScopeEntry[],
-    originalText: string
+    originalText: string,
+    interactionMode: EditorInteractionMode = 'interactiveEdit'
   ): Map<DecorationType, Array<Range | DecorationOptions>> {
     if (!this.activeEditor) {
       return new Map();
@@ -734,7 +1079,8 @@ export class Decorator {
       decorations,
       scopes,
       originalText,
-      (startPos, endPos, text) => this.createRange(startPos, endPos, text)
+      (startPos, endPos, text) => this.createRange(startPos, endPos, text),
+      interactionMode,
     );
   }
 

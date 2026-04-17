@@ -34,6 +34,13 @@ export const config = {
         .get<boolean>('links.singleClickOpen', false);
     },
   },
+  vim: {
+    enableInsertModeEditBehavior(): boolean {
+      return vscode.workspace
+        .getConfiguration(SECTION)
+        .get<boolean>('vim.enableInsertModeEditBehavior', false);
+    },
+  },
   decorations: {
     ghostFaintOpacity(): number {
       return vscode.workspace
@@ -66,10 +73,42 @@ export const config = {
     },
   },
   mermaid: {
+    renderer(): 'official-mermaid-js' | 'mermaid-rs-renderer' {
+      return vscode.workspace
+        .getConfiguration(SECTION)
+        .get<'official-mermaid-js' | 'mermaid-rs-renderer'>('mermaid.renderer', 'official-mermaid-js');
+    },
     previewMode(): 'hover' | 'interactive-viewer' {
       return vscode.workspace
         .getConfiguration(SECTION)
         .get<'hover' | 'interactive-viewer'>('mermaid.previewMode', 'hover');
+    },
+    mmdr: {
+      command(): string {
+        return vscode.workspace
+          .getConfiguration(SECTION)
+          .get<string>('mermaid.mmdr.command', 'mmdr');
+      },
+      preferredAspectRatio(): string | undefined {
+        return vscode.workspace
+          .getConfiguration(SECTION)
+          .get<string>('mermaid.mmdr.preferredAspectRatio');
+      },
+      nodeSpacing(): number | undefined {
+        return vscode.workspace
+          .getConfiguration(SECTION)
+          .get<number>('mermaid.mmdr.nodeSpacing');
+      },
+      rankSpacing(): number | undefined {
+        return vscode.workspace
+          .getConfiguration(SECTION)
+          .get<number>('mermaid.mmdr.rankSpacing');
+      },
+      fastText(): boolean {
+        return vscode.workspace
+          .getConfiguration(SECTION)
+          .get<boolean>('mermaid.mmdr.fastText', false);
+      },
     },
   },
   mentions: {

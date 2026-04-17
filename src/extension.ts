@@ -10,12 +10,16 @@ import { normalizeAnchorText } from './position-mapping';
 import { config } from './config';
 import { MarkdownParser } from './parser';
 import { MarkdownParseCache } from './markdown-parse-cache';
-import { initMermaidRenderer, disposeMermaidRenderer } from './mermaid/mermaid-renderer';
+import { clearMermaidRenderCaches, disposeMermaidRenderer, initMermaidRenderer, preflightMmdrAvailability } from './mermaid/mermaid-renderer';
 import { MermaidViewerService } from './mermaid/mermaid-viewer-service';
 import { MermaidViewerClickHandler } from './mermaid/mermaid-viewer-click-handler';
 import { OPEN_MERMAID_VIEWER_BESIDE_COMMAND, OPEN_MERMAID_VIEWER_COMMAND } from './mermaid/commands';
 import { processSvg } from './mermaid/svg-processor';
 import { MARKDOWN_LIKE_LANGUAGE_IDS } from './markdown-language-ids';
+import { resolveEditorInteractionMode } from './vim-mode';
+import { startVimModeWatcher } from './vim-mode-watcher';
+
+const MARKDOWN_LANGUAGE_IDS = new Set<string>(MARKDOWN_LIKE_LANGUAGE_IDS);
 
 /**
  * Checks if a recommended extension is installed and optionally shows a notification.
@@ -113,6 +117,7 @@ export type ExtensionApi = {
 export function activate(context: vscode.ExtensionContext): ExtensionApi {
   // Initialize mermaid renderer with extension context
   initMermaidRenderer(context);
+  void preflightMmdrAvailability();
 
   const parser = new MarkdownParser();
   const parseCache = new MarkdownParseCache(parser);
@@ -158,6 +163,15 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   const linkClickHandler = new LinkClickHandler(parseCache);
   const singleClickEnabled = config.links.singleClickOpen();
   linkClickHandler.setEnabled(singleClickEnabled);
+  const vimModeWatcher = startVimModeWatcher({
+    isEnabled: () => config.vim.enableInsertModeEditBehavior(),
+    hasActiveEditor: () => {
+      const editor = decorator.activeEditor;
+      return editor !== undefined && MARKDOWN_LANGUAGE_IDS.has(editor.document.languageId);
+    },
+    resolveInteractionMode: () => resolveEditorInteractionMode(true),
+    onInteractionModeChanged: () => decorator.updateDecorationsForSelection(),
+  });
 
   const mermaidViewerClickHandler = new MermaidViewerClickHandler(
     parseCache,
@@ -273,8 +287,18 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
       linkClickHandler.setEnabled(singleClickEnabled);
     }
 
+    if (event.affectsConfiguration('markdownInlineEditor.vim.enableInsertModeEditBehavior')) {
+      decorator.updateDecorationsForSelection();
+    }
+
     if (event.affectsConfiguration('markdownInlineEditor.colors')) {
       decorator.recreateColorDependentTypes();
+    }
+
+    if (event.affectsConfiguration('markdownInlineEditor.mermaid')) {
+      clearMermaidRenderCaches();
+      void preflightMmdrAvailability();
+      decorator.updateDecorationsForSelection();
     }
 
     if (event.affectsConfiguration('editor.fontSize') || event.affectsConfiguration('editor.lineHeight')) {
@@ -305,6 +329,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push({ dispose: () => linkClickHandler.dispose() });
   context.subscriptions.push(mermaidViewerClickHandler);
   context.subscriptions.push(mermaidViewerService);
+  context.subscriptions.push(vimModeWatcher);
 
   return { parseCache, decorator, svgProcessor: { processSvg } };
 }

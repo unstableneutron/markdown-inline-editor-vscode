@@ -6,8 +6,14 @@ jest.mock('../../parser', () => ({
   }
 }));
 
+jest.mock('../../vim-mode', () => ({
+  resolveEditorInteractionMode: jest.fn().mockResolvedValue('interactiveEdit'),
+}));
+
 import { Decorator } from '../../decorator';
 import type { DecorationRange, DecorationType } from '../../parser';
+import { resolveEditorInteractionMode } from '../../vim-mode';
+import type { EditorInteractionMode } from '../../vim-mode';
 import { isMarkerDecorationType } from '../decoration-categories';
 import { TextDocument, TextEditor, Selection, Position, Uri, Range } from '../../test/__mocks__/vscode';
 
@@ -21,7 +27,8 @@ function filterDecorationsForSelection(
   text: string,
   decorations: DecorationRange[],
   scopeRanges: Array<[number, number]>,
-  selection: ReturnType<typeof Selection>
+  selection: ReturnType<typeof Selection>,
+  interactionMode: EditorInteractionMode = 'interactiveEdit'
 ): Map<DecorationType, unknown[]> {
   const document = new TextDocument(Uri.file('test.md'), 'markdown', 1, text);
   const editor = new TextEditor(document, [selection]);
@@ -40,15 +47,54 @@ function filterDecorationsForSelection(
     filterDecorations: (
       ranges: DecorationRange[],
       scopes: ScopeEntry[],
-      originalText: string
+      originalText: string,
+      mode?: EditorInteractionMode
     ) => Map<DecorationType, unknown[]>;
   };
 
   decorator.activeEditor = editor;
-  return decorator.filterDecorations(decorations, scopes, text);
+  return decorator.filterDecorations(decorations, scopes, text, interactionMode);
 }
 
 describe('Decorator filtering behavior', () => {
+  it('resolves active interaction mode before filtering decorations', async () => {
+    const text = '- item';
+    const document = new TextDocument(Uri.file('test.md'), 'markdown', 7, text);
+    const editor = new TextEditor(document, [new Selection(new Position(0, 0), new Position(0, 0))]);
+    const parseCache = {
+      get: () => ({
+        version: document.version,
+        text,
+        decorations: [{ startPos: 0, endPos: 2, type: 'listItem' as const }],
+        scopes: [],
+        mermaidBlocks: [],
+        mathRegions: [],
+      }),
+      invalidate: () => {},
+      clear: () => {},
+    };
+
+    (resolveEditorInteractionMode as jest.Mock).mockResolvedValue('viewOnly');
+
+    const decorator = new Decorator(parseCache as any) as unknown as {
+      activeEditor: ReturnType<typeof TextEditor>;
+      updateDecorationsForSelection: () => void;
+      applyDecorations: jest.Mock;
+    };
+    decorator.activeEditor = editor;
+
+    const applySpy = jest.spyOn(decorator as any, 'applyDecorations');
+
+    decorator.updateDecorationsForSelection();
+    await Promise.resolve();
+
+    expect(resolveEditorInteractionMode).toHaveBeenCalledWith(false);
+    expect(applySpy).toHaveBeenCalledTimes(1);
+
+    const filtered = applySpy.mock.calls[0][0] as Map<DecorationType, unknown[]>;
+    expect(filtered.get('listItem')?.length).toBe(1);
+  });
+
   it('keeps semantic styling while revealing markers on active line', () => {
     const text = '**bold**';
     const decorations: DecorationRange[] = [
@@ -79,6 +125,21 @@ describe('Decorator filtering behavior', () => {
     expect(filtered.has('heading')).toBe(false);
     expect(filtered.has('hide')).toBe(false);
     expect(filtered.has('ghostFaint')).toBe(false);
+  });
+
+  it('reveals heading raw state for viewOnly selections', () => {
+    const text = '# Heading';
+    const decorations: DecorationRange[] = [
+      { startPos: 0, endPos: 2, type: 'hide' },
+      { startPos: 2, endPos: 9, type: 'heading1' },
+      { startPos: 2, endPos: 9, type: 'heading' },
+    ];
+
+    const selection = new Selection(new Position(0, 0), new Position(0, 9));
+    const filtered = filterDecorationsForSelection(text, decorations, [[0, 9]], selection, 'viewOnly');
+
+    expect(filtered.has('heading1')).toBe(false);
+    expect(filtered.has('heading')).toBe(false);
   });
 
   it('does not suppress marker decorations on non-active lines', () => {
@@ -166,6 +227,18 @@ describe('Decorator filtering behavior', () => {
     const filtered = filterDecorationsForSelection(text, decorations, [], selection);
 
     expect(filtered.has('listItem')).toBe(false);
+  });
+
+  it('keeps list item decoration on cursor-only overlap in viewOnly mode', () => {
+    const text = '- item';
+    const decorations: DecorationRange[] = [
+      { startPos: 0, endPos: 2, type: 'listItem' },
+    ];
+
+    const selection = new Selection(new Position(0, 0), new Position(0, 0));
+    const filtered = filterDecorationsForSelection(text, decorations, [], selection, 'viewOnly');
+
+    expect(filtered.get('listItem')?.length).toBe(1);
   });
 
   it('reveals horizontal rule in raw state when cursor/selection intersects', () => {
